@@ -57,6 +57,18 @@
 <body>
   <div class="top-container">
     <h1>Inventory Management System</h1>
+        <!-- Authentication links -->
+        <div class="auth-links">
+          {% if user.is_authenticated %}
+              <p>Welcome, {{ user.username }}!</p>
+              <a href="{% url 'logout' %}">Logout</a>
+          {% else %}
+              <a href="{% url 'login' %}">Login</a>
+          {% endif %}
+      </div>
+
+
+      {% if user.is_authenticated %}
     <div class="button-container">
         <form action="/user" method="get">
             <button type="submit">Withdrawl</button>
@@ -67,12 +79,15 @@
       <form action="/order" method="get">
         <button type="submit">Order</button>
     </form>
+    <form action="/stockcheck" method="get">
+      <button type="submit">Stock Check</button>
+    </form>
     <form action="/track" method="get">
       <button type="submit">Track Withdrawl</button>
     </form>
-    <form action="/analyze" method="get">
+    <!-- <form action="/analyze" method="get">
       <button type="submit">Analyse</button>
-    </form>
+    </form> -->
     </div>
   </div>
 
@@ -122,6 +137,11 @@
             </tbody>
           </table>
       </div>
+
+      {% else %}
+        <p>You must be logged in to view this page.</p>
+      {% endif %}
+
     </div>
 
       <script>

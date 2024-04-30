@@ -75,9 +75,6 @@
     <br>
     <h2>Order Lead Time Trends</h2>
     <canvas id="leadTimeChart" width="200" height="50"></canvas>
-    <br>
-    <h2>Forecast</h2>
-    <canvas id="stockForecastChart" width="200" height="50"></canvas>
   </div>
 
 
@@ -87,13 +84,14 @@
   <div class="chart-container">
     <h2>Withdrawl Trends (Top 5 Last Week)</h2>
     <canvas id="withdrawalsChart" width="50" height="20"></canvas>
-    
-
+    <br>
+    <h2>Forecast</h2>
+    <canvas id="comboChart" width="200" height="50"></canvas>
 </div>
-
-
     </div>
 
+
+    
       <script>
         var ctx = document.getElementById('inventoryChart').getContext('2d');
         var inventoryChart = new Chart(ctx, {
@@ -233,47 +231,65 @@
   </script>
   
   <script>
-    // Assuming you pass 'items_forecast' from Django to JavaScript
-    // Convert your Django context 'items_forecast' to JSON in your view before passing to the template
+    // Ensure itemsForecast is correctly parsed as a JavaScript object from the Django template.
     const itemsForecast = {{ items_forecast|safe }};
-    const ctx = document.getElementById('stockForecastChart').getContext('2d');
-    const stockForecastChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: itemsForecast.map(item => item.item.item), // item name
-            datasets: [{
-                label: 'Days Until Stock Runs Out',
-                data: itemsForecast.map(item => item.days_until_out),
-                backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                borderColor: 'rgba(54, 162, 235, 1)',
-                borderWidth: 1
-            }]
-        },
-        options: {
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    title: {
-                        display: true,
-                        text: 'Days'
-                    }
-                },
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Items'
-                    }
-                }
-            },
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'top',
-                }
-            }
-        }
+  
+    // Unique context variable for the combo chart
+    const comboCtx = document.getElementById('comboChart').getContext('2d');
+  
+    const comboChart = new Chart(comboCtx, {
+      type: 'bar', // Base type for the mixed chart
+      data: {
+          labels: itemsForecast.map(item => item.item), // Item names
+          datasets: [{
+              label: 'Net Stock',
+              data: itemsForecast.map(item => item.net_stock),
+              backgroundColor: 'rgba(54, 162, 235, 0.2)',
+              borderColor: 'rgba(54, 162, 235, 1)',
+              borderWidth: 1,
+              yAxisID: 'y-axis-net-stock',
+          }, {
+              label: 'Days Until Stock Runs Out',
+              data: itemsForecast.map(item => {
+                  return item.days_until_out === "Infinity" ? null : item.days_until_out;
+              }),
+              type: 'line',
+              borderColor: 'rgb(255, 99, 132)',
+              borderWidth: 2,
+              yAxisID: 'y-axis-forecast',
+          }]
+      },
+      options: {
+          scales: {
+              'y-axis-net-stock': {
+                  type: 'linear',
+                  display: true,
+                  position: 'left',
+                  title: {
+                      display: true,
+                      text: 'Net Stock'
+                  },
+              },
+              'y-axis-forecast': {
+                  type: 'linear',
+                  display: true,
+                  position: 'right',
+                  grid: {
+                    drawOnChartArea: false, // Do not draw the grid for the 'forecast' scale
+                  },
+                  title: {
+                      display: true,
+                      text: 'Days Until Stock Runs Out'
+                  },
+              }
+          }
+      }
     });
-</script>
+  </script>
+  
+  
+  
+  
 
 
 </body>

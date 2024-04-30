@@ -1,0 +1,78 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Login</title>
+    <style>
+        /* General body styles */
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        /* Form container */
+        .form-container {
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            width: 300px;
+        }
+
+        /* Form styles */
+        form {
+            display: flex;
+            flex-direction: column;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        input[type="submit"] {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+
+        input[type="submit"] {
+            background-color: #5C67F2;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        input[type="submit"]:hover {
+            background-color: #4a54e1;
+        }
+
+        /* Error message */
+        .error-message {
+            color: #ff0000;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="form-container">
+        <h2>Login</h2>
+        <form method="post" action="{% url 'login' %}">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <input type="submit" value="Login">
+        </form>
+
+        {% if form.errors %}
+            <div class="error-message">Your username and password didn't match. Please try again.</div>
+        {% endif %}
+    </div>
+</body>
+</html>
