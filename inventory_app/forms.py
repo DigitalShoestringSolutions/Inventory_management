@@ -1,7 +1,18 @@
 from django import forms
 from .models import InventoryItem, Location
 from django.forms.widgets import TextInput, NumberInput, DateTimeInput, DateInput
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.models import User
 
+
+class SignUpForm(UserCreationForm):
+    email = forms.EmailField(required=True)
+
+    class Meta:
+        model = User
+        fields = ('username', 'email', 'password1', 'password2')
+
+        
 
 class StockUpdateForm(forms.ModelForm):
     location = forms.ModelChoiceField(queryset=Location.objects.all(), required=True)

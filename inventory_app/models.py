@@ -2,7 +2,7 @@
 from django.db import models
 from django.utils import timezone
 from datetime import datetime, date
-
+ 
 
 class Location(models.Model):
     name = models.CharField(max_length=255,  default='Stores')  # A descriptive name for the location

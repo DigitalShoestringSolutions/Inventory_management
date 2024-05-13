@@ -12,10 +12,42 @@ from django.db.models import F, ExpressionWrapper, fields
 from django.db import transaction
 from django.db.models import Count, Case, When, IntegerField, Sum, Max, Avg, F
 from django.db.models.functions import Coalesce
+import json
+from django.core.serializers.json import DjangoJSONEncoder
+from statistics import median
+from django.core.exceptions import ObjectDoesNotExist
+import socket
+from urllib.parse import unquote as urlunquote
+from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.views import View
+from .forms import SignUpForm
+from django.contrib.auth import login
 
 
 
 
+def signup(request):
+    if request.method == 'POST':
+        form = SignUpForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            login(request, user)  # Automatically log in the user after registration
+            return redirect('home')  # Redirect to a post-registration pagelocal
+    else:
+        form = SignUpForm()
+    return render(request, 'signup.html', {'form': form})
+
+
+
+@login_required
+def profile(request):
+    return render(request, 'profile.html')
+
+
+# @login_required
 def home(request):
     items = InventoryItem.objects.all()  # Retrieve all inventory items
 
@@ -53,128 +85,96 @@ def home(request):
 
 
 
-def analyze(request):
-    items = InventoryItem.objects.all()  # Retrieve all inventory items
-
-    # items_on_order = OrderItem.objects.filter(on_order__gt=0).count()
-    items_on_order = OrderItem.objects.filter(on_order__gt=0, completed=False).count()
-    items_below_minimum = InventoryItem.objects.annotate(difference=ExpressionWrapper(F('unit') - F('minimum_unit'), output_field=fields.IntegerField())).filter(difference__lt=0).count()
-    items_5_more_than_minimum = InventoryItem.objects.annotate(difference=ExpressionWrapper(F('unit') - F('minimum_unit'), output_field=fields.IntegerField())).filter(difference=5).count()
-    items_greater_than_5_more_than_minimum = InventoryItem.objects.annotate(difference=ExpressionWrapper(F('unit') - F('minimum_unit'), output_field=fields.IntegerField())).filter(difference__gt=5).count()
-
-
-    items_below_minimum_by_location = InventoryItem.objects.annotate(
-        below_minimum=Case(
-            When(unit__lt=F('minimum_unit'), then=1),
-            default=0,
-            output_field=IntegerField()
-        )
-    ).values('location__name').annotate(total_below_minimum=Sum('below_minimum')).order_by('location__name')
-
-    locations = [item['location__name'] for item in items_below_minimum_by_location]
-    below_minimum_counts = [item['total_below_minimum'] for item in items_below_minimum_by_location]
-
-    ##########################################
-    one_week_ago = timezone.now() - timezone.timedelta(days=7)
-    # Query to get the total units withdrawn for each item in the last week, then order by the total and take the top 5
-    top_withdrawals = ItemWithdrawal.objects.filter(date_withdrawn__gte=one_week_ago).values('item__item').annotate(total_withdrawn=Sum('units_withdrawn')).order_by('-total_withdrawn')[:5]
-
-    items_labels = [withdrawal['item__item'] for withdrawal in top_withdrawals]
-    withdrawals_data = [withdrawal['total_withdrawn'] for withdrawal in top_withdrawals]
-
-
-    ##########################################
-    # Query to calculate lead time and get the top 5 items with the longest lead times
-    # top_lead_times = OrderItem.objects.annotate(
-    #     lead_time=ExpressionWrapper(F('order_lead_time') - F('oracle_order_date'), output_field=fields.DurationField())
-    # ).order_by('-lead_time')[:5]
-
-    # items_lead_time_labels = [item.item.item for item in top_lead_times]  # Adjust based on your model's structure
-    #    = [item.lead_time.days for item in top_lead_times]
-    top_lead_times = OrderItem.objects.annotate(
-    lead_time=ExpressionWrapper(F('order_lead_time') - F('oracle_order_date'), output_field=fields.DurationField())
-    ).values('item__item') \
-    .annotate(max_lead_time=Max('lead_time')) \
-    .order_by('-max_lead_time')[:5]
-
-    items_lead_time_labels = [item['item__item'] for item in top_lead_times]
-    lead_times = [item['max_lead_time'].days for item in top_lead_times]  # Extracting days from lead time
-
-
-    ####################EXPERIMENTAL FORECASTING######################
-
-    # Calculate one week ago from now
-    one_week_ago = timezone.now() - timezone.timedelta(days=7)
-
-    # Get the average daily withdrawal rate for each item over the last week
-    avg_withdrawals_per_item = ItemWithdrawal.objects.filter(date_withdrawn__gte=one_week_ago) \
-        .values('item_id') \
-        .annotate(avg_daily_withdrawn=Avg('units_withdrawn'))
-
-    # Convert to a dictionary for easier access
-    avg_withdrawals_dict = {withdrawal['item_id']: withdrawal['avg_daily_withdrawn'] for withdrawal in avg_withdrawals_per_item}
-
-    # For each inventory item, calculate net stock and estimate days until stock runs out
-    items_forecast = []
-    for item in InventoryItem.objects.all():
-        item_id = item.id
-        total_on_order = OrderItem.objects.filter(item_id=item_id, completed=False) \
-            .aggregate(total_on_order=Coalesce(Sum('on_order'), 0))['total_on_order']
-        
-        net_stock = item.unit - total_on_order
-        avg_daily_withdrawn = avg_withdrawals_dict.get(item_id, 0)
-        # net_stock = item.unit - OrderItem.objects.filter(item_id=item_id, completed=False).aggregate(total_on_order=Sum('on_order'))['total_on_order'] or 0
-        
-        # Avoid division by zero
-        days_until_out = (net_stock / avg_daily_withdrawn) if avg_daily_withdrawn else float('inf')
-        
-        items_forecast.append({
-            'item': item,
-            'net_stock': net_stock,
-            'avg_daily_withdrawn': avg_daily_withdrawn,
-            'days_until_out': days_until_out,
-            
-        })
-        print(items_forecast)
-
-
-
-    context = {
-        'items': items,
-        'items_on_order': items_on_order,
-        'items_below_minimum': items_below_minimum,
-        'items_5_more_than_minimum': items_5_more_than_minimum,
-        'items_greater_than_5_more_than_minimum': items_greater_than_5_more_than_minimum,
-        'locations': locations,
-        'below_threshold_counts': below_minimum_counts,
-        'items_labels': items_labels,
-        'withdrawals_data': withdrawals_data,
-        'items_lead_time_labels': items_lead_time_labels,
-        'lead_times': lead_times,
-        'items_forecast': items_forecast,
-    }
-
-    return render(request, 'inventory_app/analyze.html', context)
-
-
+# @login_required
 def user(request): #this is the base withdrawl page
     items = InventoryItem.objects.all().order_by('item')  # Adjust ordering as needed
     return render(request, 'inventory_app/user.html', {'items': items})
 
+# class MyProtectedView(LoginRequiredMixin, View):
+@login_required
+def stock_check(request):
+    # items = InventoryItem.objects.all().order_by('item')
+    locations = Location.objects.all().order_by('name')  # Get all locations, order by name
+    return render(request, 'inventory_app/stockcheck.html', {'locations': locations})
 
+
+def get_items_for_location(request, location_name):
+    decoded_name = urlunquote(location_name)  # Decode the URL-encoded location name
+    location = Location.objects.filter(name=decoded_name).first()
+    if location:
+        items = InventoryItem.objects.filter(location=location)
+        items_data = [{'id': item.id, 'name': item.item, 'units': item.unit} for item in items]
+        return JsonResponse({'items': items_data})
+    else:
+        return JsonResponse({'error': 'Location not found'}, status=404)
+
+
+
+
+@csrf_exempt
+def update_units_by_location(request):
+    if request.method == 'POST':
+        print(request.POST)  # Print the data received to debug
+        location_name = request.POST.get('location')
+        location = Location.objects.filter(name=location_name).first()
+        if not location:
+            return JsonResponse({'status': 'error', 'message': 'Location not found'}, status=404)
+
+        responses = []
+        items = InventoryItem.objects.filter(location=location)
+
+        for item in items:
+            item_id = f'units_{item.id}'
+            units_value = request.POST.get(item_id)
+            if units_value is None:
+                responses.append(f"No units provided for {item.item}.")
+                continue
+            try:
+                new_units = int(units_value)
+                if new_units != item.unit:
+                    old_units = item.unit
+                    item.unit = new_units
+                    item.save()
+
+                    # Calculate the difference and adjust the sign
+                    units_difference = old_units - new_units
+                    if units_difference < 0:
+                        units_difference = units_difference  # Make negative differences positive
+                    else:
+                        units_difference = units_difference  # Make positive differences negative
+
+                    # Create a record in ItemWithdrawal with the adjusted difference
+                    ItemWithdrawal.objects.create(
+                        item=item,
+                        location=location,
+                        date_withdrawn=timezone.now(),
+                        units_withdrawn=units_difference,  # Use the adjusted difference
+                        withdrawn_by="Stock Check Audit"
+                    )
+                    responses.append(f"Updated {item.item} to {new_units} units, change recorded as {units_difference}.")
+            except ValueError:
+                responses.append(f"Invalid units for {item.item}")
+
+        return JsonResponse({'status': 'success', 'messages': responses})
+
+    return JsonResponse({'status': 'error', 'message': 'Invalid request'}, status=400)
+
+@login_required
 def order(request):
     items = InventoryItem.objects.all().order_by('item')
     orders = OrderItem.objects.all().order_by('item')   
     return render(request, 'inventory_app/order.html', {'items': items, 'orders':orders})
 
 
+
+@login_required
 def track(request):
     withdrawals = ItemWithdrawal.objects.all()  # Retrieve all withdrawal records
     return render(request, 'inventory_app/track.html', {'withdrawals': withdrawals})
 
 
 
-
+@login_required
 def admin_view(request):
     # Initialize forms outside of the if block to ensure they are available in the entire function scope
     add_form = StockAddForm()
@@ -232,11 +232,6 @@ def submit_withdrawal(request):
         location_id= request.POST.get('location')
         units_withdrawn = int(request.POST.get('units_withdrawn'))
         withdrawn_by = request.POST.get('withdrawn_by')
-        
-        # Update InventoryItem
-        # item = InventoryItem.objects.get(id=item_id)
-        # item.unit -= units_withdrawn
-        # item.save()
 
         # Fetch the InventoryItem instance
         item = get_object_or_404(InventoryItem, id=item_id)
@@ -406,3 +401,173 @@ def consolidate_stock(request, order_id):
             return JsonResponse({'success': False, 'message': 'Order already completed.'})
     return JsonResponse({'success': False, 'message': 'Invalid request'})
 
+
+@login_required
+def analyze(request):
+    items = InventoryItem.objects.all()  # Retrieve all inventory items
+
+    # items_on_order = OrderItem.objects.filter(on_order__gt=0).count()
+    items_on_order = OrderItem.objects.filter(on_order__gt=0, completed=False).count()
+    items_below_minimum = InventoryItem.objects.annotate(difference=ExpressionWrapper(F('unit') - F('minimum_unit'), output_field=fields.IntegerField())).filter(difference__lt=0).count()
+    items_5_more_than_minimum = InventoryItem.objects.annotate(difference=ExpressionWrapper(F('unit') - F('minimum_unit'), output_field=fields.IntegerField())).filter(difference=5).count()
+    items_greater_than_5_more_than_minimum = InventoryItem.objects.annotate(difference=ExpressionWrapper(F('unit') - F('minimum_unit'), output_field=fields.IntegerField())).filter(difference__gt=5).count()
+
+
+    items_below_minimum_by_location = InventoryItem.objects.annotate(
+        below_minimum=Case(
+            When(unit__lt=F('minimum_unit'), then=1),
+            default=0,
+            output_field=IntegerField()
+        )
+    ).values('location__name').annotate(total_below_minimum=Sum('below_minimum')).order_by('location__name')
+
+    locations = [item['location__name'] for item in items_below_minimum_by_location]
+    below_minimum_counts = [item['total_below_minimum'] for item in items_below_minimum_by_location]
+
+    ##########################################
+    one_week_ago = timezone.now() - timezone.timedelta(days=7)
+    # Query to get the total units withdrawn for each item in the last week, then order by the total and take the top 5
+    top_withdrawals = ItemWithdrawal.objects.filter(date_withdrawn__gte=one_week_ago).values('item__item').annotate(total_withdrawn=Sum('units_withdrawn')).order_by('-total_withdrawn')[:5]
+
+    items_labels = [withdrawal['item__item'] for withdrawal in top_withdrawals]
+    withdrawals_data = [withdrawal['total_withdrawn'] for withdrawal in top_withdrawals]
+
+
+    ##########################################
+    # Query to calculate lead time and get the top 5 items with the longest lead times
+    top_lead_times = OrderItem.objects.annotate(
+    lead_time=ExpressionWrapper(F('order_lead_time') - F('oracle_order_date'), output_field=fields.DurationField())
+    ).values('item__item') \
+    .annotate(max_lead_time=Max('lead_time')) \
+    .order_by('-max_lead_time')[:5]
+
+    items_lead_time_labels = [item['item__item'] for item in top_lead_times]
+    lead_times = [item['max_lead_time'].days for item in top_lead_times]  # Extracting days from lead time
+
+
+    ####################EXPERIMENTAL FORECASTING######################
+    # Calculate one week ago from now
+    one_week_ago = timezone.now() - timezone.timedelta(days=7)
+
+    # Initialize a dictionary to hold item IDs and their withdrawal amounts
+    withdrawals_per_item = {}
+
+    # Fetch all withdrawals in the last week
+    last_week_withdrawals = ItemWithdrawal.objects.filter(date_withdrawn__gte=one_week_ago)
+
+    for withdrawal in last_week_withdrawals:
+        item_id = withdrawal.item_id
+        if item_id not in withdrawals_per_item:
+            withdrawals_per_item[item_id] = []
+        withdrawals_per_item[item_id].append(withdrawal.units_withdrawn)
+
+    # Calculate the median daily withdrawal for each item
+    median_withdrawals_dict = {
+        item_id: median(withdrawal_amounts) for item_id, withdrawal_amounts in withdrawals_per_item.items()
+    }
+
+    # For each inventory item, calculate net stock and estimate days until stock runs out using the median withdrawal rate
+    items_forecast = []
+    for item in InventoryItem.objects.all():
+        item_id = item.id
+        total_on_order = OrderItem.objects.filter(item_id=item_id, completed=False) \
+            .aggregate(total_on_order=Coalesce(Sum('on_order'), 0))['total_on_order']
+        
+        net_stock = item.unit - total_on_order
+        median_daily_withdrawn = median_withdrawals_dict.get(item_id, 0)
+        
+        # Avoid division by zero
+        days_until_out = net_stock / median_daily_withdrawn if median_daily_withdrawn else float('inf')
+        
+        items_forecast.append({
+            'item': item.item,  # Using item.item assuming it's the string representation
+            'net_stock': net_stock,
+            'median_daily_withdrawn': median_daily_withdrawn,
+            'days_until_out': days_until_out,
+        })
+
+    # Proceed with filtering items_forecast for items running out in a week or less and serialization as before
+    items_forecast_filtered = [item for item in items_forecast if item['days_until_out'] <= 7 and item['days_until_out'] != float('inf')]
+
+    items_forecast_serializable = [
+        {
+            'item': item_forecast['item'],
+            'net_stock': item_forecast['net_stock'],
+            'median_daily_withdrawn': item_forecast['median_daily_withdrawn'],
+            'days_until_out': item_forecast['days_until_out'],
+        }
+        for item_forecast in items_forecast_filtered
+    ]
+
+    items_forecast_json = json.dumps(items_forecast_serializable, cls=DjangoJSONEncoder)
+
+    context = {
+        'items': items,
+        'items_on_order': items_on_order,
+        'items_below_minimum': items_below_minimum,
+        'items_5_more_than_minimum': items_5_more_than_minimum,
+        'items_greater_than_5_more_than_minimum': items_greater_than_5_more_than_minimum,
+        'locations': locations,
+        'below_threshold_counts': below_minimum_counts,
+        'items_labels': items_labels,
+        'withdrawals_data': withdrawals_data,
+        'items_lead_time_labels': items_lead_time_labels,
+        'lead_times': lead_times,
+        'items_forecast': items_forecast_json,
+        # 'items_forecast': json.dumps(items_forecast_processed, cls=DjangoJSONEncoder),
+    }
+    # print(context['items_forecast'])
+
+    return render(request, 'inventory_app/analyze.html', context)
+
+
+# def item_search(request):
+#     item_name = request.GET.get('name', '')
+#     if not item_name:
+#         return JsonResponse({'error': 'No item name provided'}, status=400)
+
+#     items = InventoryItem.objects.filter(item__icontains=item_name)
+#     if not items:
+#         return JsonResponse({'error': 'No items found'}, status=404)
+    
+#     data = [{'item_name': item.item, 'location': item.location.name, 'units': item.unit} for item in items]
+#     return JsonResponse({'items': data}, safe=False)
+
+def item_search(request):
+    item_name = request.GET.get('name', '')
+    if not item_name:
+        return JsonResponse({'error': 'No item name provided'}, status=400)
+
+    items = InventoryItem.objects.filter(item__icontains=item_name)
+    if not items.exists():
+        return JsonResponse({'error': 'No items found'}, status=404)
+
+    data = [{
+        'item_name': item.item,
+        'location': item.location.name,
+        'units': item.unit
+    } for item in items]
+
+    count = items.count()
+    client_ip = get_client_ip(request)
+    server_ip = get_server_ip()
+
+    return JsonResponse({
+        'items': data,
+        'count': count,
+        'client_ip': client_ip,
+        'server_ip': server_ip
+    }, safe=False)
+
+def get_client_ip(request):
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0]
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
+
+def get_server_ip():
+    hostname = socket.gethostname()
+    server_ip = socket.gethostbyname(hostname)
+    return server_ip
