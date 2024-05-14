@@ -1,0 +1,11 @@
+{
+  "show": {
+    "sidebar": false,
+    "servers": true,
+    "operations": true,
+    "schemas": false
+  },
+  "expand": {
+    "messageExamples": false
+  }
+}

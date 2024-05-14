@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% load static %}
+    {% get_static_prefix as STATIC_PREFIX %}
+	<title>Upload Identity List</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    {% block css %} {% endblock css %}
+<!--    <link rel="stylesheet" href="{{STATIC_PREFIX}}css/base.css">-->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-Zenh87qX5JnK2Jl0vWa8Ck2rdkQ2Bzep5IDxbcnCeuOxjzrPF/et3URy9Bv1WTRi" crossorigin="anonymous">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+</head>
+<body>
+<div class="container">
+    <h1>Upload Identity List</h1>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+    <div class="form-group mt-2">
+        {{ form.file }}
+    </div>
+    <div class="form-group mt-2">
+        <input class="btn btn-primary" type="submit" value="Submit">
+    </div>
+    </form>
+</div>
+<!-- Header -->
+<header class="header">
+
+</header>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.1/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-u1OknCvxWvY5kfmNBILK2hRnQC3Pr17a+RTT6rIHI7NnikvbZlHgTPOOmMi466C8"
+        crossorigin="anonymous"></script>
+</body>
+</html>
+

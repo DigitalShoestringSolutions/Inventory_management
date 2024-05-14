@@ -1,11 +1,99 @@
-version: '3.8'
-
 services:
   web:
-    build: .
-    command: python3 manage.py runserver 0.0.0.0:8000
+    build: ./inventory_ui
+    command: sh -c "python manage.py collectstatic --noinput &&
+      python manage.py migrate &&
+      python manage.py runserver 0.0.0.0:8000"
     volumes:
-      - .:/code
+      - ./inventory_ui/code:/app
+      - ./inventory_ui/data:/app/data
+      - ./inventory_ui/config:/app/config
     ports:
       - "8000:8000"
+    networks:
+      internal:
+        aliases:
+          - web.docker.local
+    logging:
+      driver: syslog
+      options:
+        tag: docker-mqtt-broker
     restart: unless-stopped
+    env_file:
+      - django_secret_key
+      - default_password
+  
+  inventory-ds:
+    build: ./inventory_ds
+    command: sh -c "python manage.py collectstatic --noinput &&
+      python manage.py migrate &&
+      python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./inventory_ds/code:/app
+      - ./inventory_ds/data:/app/data
+      - ./inventory_ds/config:/app/config
+    ports:
+      - "8000:8000"
+    networks:
+      internal:
+        aliases:
+          - inventory-ds.docker.local
+    logging:
+      driver: syslog
+      options:
+        tag: docker-mqtt-broker
+    restart: unless-stopped
+    env_file:
+      - django_secret_key
+      - default_password
+
+  mqtt_broker:
+    extends:
+      file: mqtt_broker/app.yml
+      service: app
+    networks:
+      internal:
+        aliases:
+          - mqtt.docker.local
+    logging:
+      driver: syslog
+      options:
+        tag: docker-mqtt-broker
+    restart: unless-stopped
+
+  locations-sds:
+    extends:
+      file: locations_ds/app.yml
+      service: app
+    networks:
+      internal:
+        aliases:
+          - locations-ds.docker.local
+    logging:
+      driver: syslog
+      options:
+        tag: docker-locations-ds
+    restart: unless-stopped
+    env_file:
+      - django_secret_key
+      - default_password
+
+  identity-sds:
+    extends:
+        file: identity_ds/app.yml
+        service: app
+    networks:
+        internal:
+            aliases:
+                - identity-ds.docker.local
+    logging:
+            driver: syslog
+            options:
+                    tag: docker-identity-sds
+    restart: unless-stopped
+    env_file:
+        - django_secret_key
+
+networks:
+  internal:
+    name: shoestring-internal
