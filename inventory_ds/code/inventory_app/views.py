@@ -1,6 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from .forms import CreateItemForm
-from .models import InventoryItem, OrderItem
+from .models import InventoryItem
 from django.http import JsonResponse
 from django.http import HttpResponse
 from io import BytesIO
@@ -12,46 +11,177 @@ from django.db.models import F, ExpressionWrapper, fields
 from django.db import transaction
 from django.db.models import Count, Case, When, IntegerField, Sum, Max, Avg, F
 from django.db.models.functions import Coalesce
+
+from rest_framework.decorators import (
+    api_view,
+    renderer_classes,
+)
+from rest_framework.renderers import JSONRenderer, BrowsableAPIRenderer
+from rest_framework.response import Response
+from rest_framework import viewsets, status
+
 import datetime
 import dateutil.parser
 import requests
 from . import utils
+from . import models
+from django.conf import settings
 
 
-def home(request):
-    items = get_all_items()
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def state_items(request):
+    item_locations = fetch_all_item_locations()
 
-    # items_on_order = OrderItem.objects.filter(on_order__gt=0).count()
-    items_on_order = OrderItem.objects.filter(on_order__gt=0, completed=False).count()
+    grouped_locations = {}
+    for location_entry in item_locations:
+        id = location_entry["child"]
+        if id not in grouped_locations:
+            grouped_locations[id] = []
+        location_record = {
+            "location_id": location_entry["parent"],
+            "location": utils.get_name(location_entry["parent"]),
+            "quantity": location_entry["quantity"],
+        }
+        grouped_locations[id].append(location_record)
 
-    (
-        items_below_minimum,
-        items_5_more_than_minimum,
-        items_greater_than_5_more_than_minimum,
-    ) = get_stock_alert_data(items)
+    records = [
+        {
+            "id": item.id,
+            "name": utils.get_name(item.id),
+            "locations": grouped_locations[item.id],
+        }
+        for item in models.InventoryItem.objects.all()
+    ]
+    return Response(records, status=status.HTTP_200_OK)
 
-    below_minimum_counts, below_minimum_locations = (
-        get_items_below_location_threshold_data()
-    )
 
-    context = {
-        "items": items,
-        "items_on_order": items_on_order,
-        "items_below_minimum": items_below_minimum,
-        "items_5_more_than_minimum": items_5_more_than_minimum,
-        "items_greater_than_5_more_than_minimum": items_greater_than_5_more_than_minimum,
-        "below_minimum_locations": below_minimum_locations,
-        "below_threshold_counts": below_minimum_counts,
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def state_items_detailed(request):
+    item_locations = (
+        fetch_all_item_locations()
+    )  # TODO: try async for parallel fetching - but profile
+
+    grouped_locations = {}
+    for location_entry in item_locations:
+        location_record = {
+            "location_id": location_entry["parent"],
+            "location": utils.get_name(location_entry["parent"]),
+            "quantity": location_entry["quantity"],
+        }
+
+        id = location_entry["child"]
+        if id not in grouped_locations:
+            grouped_locations[id] = []
+        grouped_locations[id].append(location_record)
+
+    on_order = {
+        record["item"]: record["remaining"] for record in fetch_items_on_order()
     }
 
-    return render(request, "inventory_app/home.html", context)
+    records = [
+        {
+            "id": item.id,
+            "name": utils.get_name(item.id),
+            "quantity_per_unit": item.quantity_per_unit,
+            "minimum_unit": item.minimum_unit,
+            "locations": grouped_locations.get(item.id, []),
+            "on_order": on_order.get(item.id, None),
+        }
+        for item in models.InventoryItem.objects.all()
+    ]
+    return Response(records, status=status.HTTP_200_OK)
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def state_locations(request):
+    item_locations = fetch_all_item_locations()
+
+    grouped_items = {}
+    for location_entry in item_locations:
+        location_id = location_entry["parent"]
+        item_id = location_entry["child"]
+
+        item_record = {
+            "id": item_id,
+            "name": utils.get_name(item_id),
+            "quantity": location_entry["quantity"],
+        }
+
+        if location_id not in grouped_items:
+            grouped_items[location_id] = {"id":location_id,"name":utils.get_name(location_id),"items":[]}
+        grouped_items[location_id]["items"].append(item_record)
+
+    return Response(grouped_items.values(), status=status.HTTP_200_OK)
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def list_locations(request):
+    pass
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def list_locations_for_item(request,item_id):
+    out = [
+        {"id": record["parent"], "name": utils.get_name(record["parent"])}
+        for record in fetch_item_locations(item_id)
+    ]
+    return Response(out, status=status.HTTP_200_OK)
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def list_items(request):
+    pass
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def list_items_at_location(request,location_id):
+    pass
+
+
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
 
 
 def analyze(request):
-    items = fetch_all_items()  # Retrieve all inventory items
+    items = fetch_all_item_locations()  # Retrieve all inventory items
 
     # items_on_order = OrderItem.objects.filter(on_order__gt=0).count()
-    items_on_order = OrderItem.objects.filter(on_order__gt=0, completed=False).count()
+    # items_on_order = OrderItem.objects.filter(on_order__gt=0, completed=False).count()
 
     (
         items_below_minimum,
@@ -164,107 +294,45 @@ def analyze(request):
     return render(request, "inventory_app/analyze.html", context)
 
 
-def user(request):  # this is the base withdrawl page
-    list_of_available_items = fetch_item_list()
-    print(list_of_available_items)
-    return render(
-        request, "inventory_app/user.html", {"items": list_of_available_items}
+def ItemViewset(request):
+    create_new_item(
+        add_form.data["item_name"],
+        add_form.data["quantity_per_unit"],
+        add_form.data["minimum_unit"],
     )
+    pass
 
 
-def order(request):
-    items = fetch_item_list()
-    orders = OrderItem.objects.all()
-    return render(
-        request, "inventory_app/order.html", {"items": items, "orders": orders}
-    )
-
-
-def track(request):
-    raw_withdrawals = fetch_all_withdrawls()
-    withdrawals = [
-        {
-            "item": utils.get_item_name(entry["child"]),
-            "location": utils.get_location_name(entry["from_parent"]),
-            "date_withdrawn": dateutil.parser.isoparse(entry["timestamp"]).strftime(
-                "%d %b %Y %H:%M"
-            ),
-            "units_withdrawn": entry["quantity"],
-            "withdrawn_by": entry["to_parent"].split("@")[
-                -1
-            ],  # TODO: maybe do properly with ID in ID manager
-        }
-        for entry in raw_withdrawals
-    ]
-
-    return render(request, "inventory_app/track.html", {"withdrawals": withdrawals})
-
-
-def admin_view(request):
-    # Initialize forms outside of the if block to ensure they are available in the entire function scope
-    add_form = CreateItemForm()
-    # update_form = StockUpdateForm()
-
-    if request.method == "POST":
-        if "add" in request.POST:  # If the add operation is requested
-            add_form = CreateItemForm(request.POST)  # Reinitialize with posted data
-            if add_form.is_valid():
-                # print(add_form.data)
-                create_new_item(add_form.data['item_name'],add_form.data['quantity_per_unit'],add_form.data['minimum_unit'])
-                return redirect("admin_view")  # Redirect to avoid double posting
-        # No longer used
-        # elif "update" in request.POST:  # If the update operation is requested
-        #     update_form = StockUpdateForm(request.POST)  # Reinitialize with posted data
-        #     if update_form.is_valid():
-        #         # update_form.save()
-        #         print(update_form.data)
-        #         return redirect("admin_view")  # Redirect to avoid double posting
-
-    raw_items = get_all_items()  # Fetch items regardless of POST or GET request
-
+def get_all_inventoryItems(request):
     inv_items = InventoryItem.objects.all()
-    # group by item_id
-    grouped_items = {}
-    for item in raw_items:
-        item_id = item["child"]
+    # # group by item_id
+    # grouped_items = {}
+    # for item in raw_items:
+    #     item_id = item["child"]
 
-        if item_id not in grouped_items:
-            grouped_items[item_id] = {"total": 0, "locations": [], "name":item['name']}
+    #     if item_id not in grouped_items:
+    #         grouped_items[item_id] = {"total": 0, "locations": [], "name":item['name']}
 
-            found_inv_items = inv_items.filter(item=item_id)
-            if len(found_inv_items) >0:
-                inv_item = found_inv_items[0]
-                grouped_items[item_id]["quantity_per_unit"] = inv_item.quantity_per_unit
-                grouped_items[item_id]["minimum_unit"] = inv_item.minimum_unit
+    #         found_inv_items = inv_items.filter(item=item_id)
+    #         if len(found_inv_items) >0:
+    #             inv_item = found_inv_items[0]
+    #             grouped_items[item_id]["quantity_per_unit"] = inv_item.quantity_per_unit
+    #             grouped_items[item_id]["minimum_unit"] = inv_item.minimum_unit
 
-        grouped_items[item_id]["total"] += item["quantity"] if item["quantity"] else 0
-        grouped_items[item_id]["locations"].append(item["location"])
+    #     grouped_items[item_id]["total"] += item["quantity"] if item["quantity"] else 0
+    #     grouped_items[item_id]["locations"].append(item["location"])
 
-    processed_items = [
-        {
-            "id": item_id,
-            "item": entry["name"],
-            "locations": ",\n".join(entry["locations"]),
-            "unit": entry["total"],
-            "quantity_per_unit": entry["quantity_per_unit"],
-            "minimum_unit": entry["minimum_unit"],
-        }
-        for (item_id, entry) in grouped_items.items()
-    ]
-    # <td>{{ item.id }}</td>
-    #                 <td>{{ item.item }}</td>
-    #                 <td>{{ item.locations }}</td>
-    #                 <td>{{ item.supplier }}</td>
-    #                 <td>{{ item.quantity_per_unit }}</td>
-    #                 <td>{{ item.unit }}</td>
-    #                 <td>{{ item.minimum_unit }}</td>
-    #                 <td>{{ item.cost }}</td>
-    return render(
-        request,
-        "inventory_app/adminpage.html",
-        # {"update_form": update_form, "add_form": add_form, "items": processed_items},
-        {"add_form": add_form, "items": processed_items},
-    )
+    # processed_items = [
+    #     {
+    #         "id": item_id,
+    #         "item": entry["name"],
+    #         "locations": ",\n".join(entry["locations"]),
+    #         "unit": entry["total"],
+    #         "quantity_per_unit": entry["quantity_per_unit"],
+    #         "minimum_unit": entry["minimum_unit"],
+    #     }
+    #     for (item_id, entry) in grouped_items.items()
+    # ]
 
 
 def get_item_details(request, item_id):
@@ -295,7 +363,7 @@ def submit_withdrawal(request):
         messages.success(request, "Successfully recorded.")
         items = InventoryItem.objects.all().order_by("item")  # TODO
 
-        return render(request, "inventory_app/user.html", {"items": items})
+        # return render(request, "inventory_app/user.html", {"items": items})
     else:
         return HttpResponse("Invalid request", status=400)
 
@@ -332,73 +400,13 @@ def download_stock_report(request):
     return response
 
 
-# This doesn't seem to be used
-# def track_withdrawals(request):
-#     unique_withdrawn_by = (
-#         ItemWithdrawal.objects.order_by("withdrawn_by")
-#         .values_list("withdrawn_by", flat=True)
-#         .distinct()
-#     )
-#     unique_items = InventoryItem.objects.order_by("item").distinct()
-#     selected_items = request.GET.getlist("item")  # Fetch selected items from request
-
-#     if request.method == "GET":
-#         withdrawn_by = request.GET.get("withdrawn_by")
-#         selected_items = request.GET.getlist(
-#             "item"
-#         )  # This method handles multiple values for 'item'
-
-#         if withdrawn_by and withdrawn_by != "All":
-#             withdrawals = withdrawals.filter(withdrawn_by__icontains=withdrawn_by)
-#         if selected_items:
-#             withdrawals = withdrawals.filter(item__item__in=selected_items)
-
-#         # For CSV export
-#         if "export" in request.GET:
-#             response = HttpResponse(
-#                 content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-#             )
-#             response["Content-Disposition"] = 'attachment; filename="withdrawals.xlsx"'
-
-#             wb = Workbook()
-#             ws = wb.active
-#             ws.append(["Item", "Date Withdrawn", "Units Withdrawn", "Withdrawn By"])
-
-#             for withdrawal in withdrawals:
-#                 ws.append(
-#                     [
-#                         withdrawal.item.item,
-#                         withdrawal.date_withdrawn.strftime("%Y-%m-%d %H:%M"),
-#                         withdrawal.units_withdrawn,
-#                         withdrawal.withdrawn_by,
-#                     ]
-#                 )
-
-#             virtual_workbook = BytesIO()
-#             wb.save(virtual_workbook)
-#             virtual_workbook.seek(0)
-#             response.write(virtual_workbook.getvalue())
-#             return response
-
-#     return render(
-#         request,
-#         "inventory_app/track.html",
-#         {
-#             "unique_withdrawn_by": unique_withdrawn_by,
-#             "unique_items": unique_items,
-#             "withdrawals": withdrawals,
-#             "selected_items": selected_items,
-#         },
-#     )
-
-
 def get_locations_for_item(request, item_id):
     print(f"get for {item_id}")
     raw_item_locations = fetch_item_locations(item_id)
     simplified_item_locations = [
         {
             "id": entry["parent"],
-            "name": utils.get_location_name(entry["parent"]),
+            "name": utils.get_name(entry["parent"]),
             "quantity": entry["quantity"],
         }
         for entry in raw_item_locations
@@ -407,83 +415,83 @@ def get_locations_for_item(request, item_id):
     return JsonResponse(simplified_item_locations, safe=False)
 
 
-def order_view(request):
-    if request.method == "POST":
-        item_id = request.POST.get("item")
-        location_id = request.POST.get(
-            "location"
-        )  # This will be the ID of the location
-        supplier = request.POST.get("supplier")
-        units = request.POST.get("units")
-        minimum_units = request.POST.get("minimum_units")
-        cost = request.POST.get("cost")
-        unit_ord = request.POST.get("unit_ord")
-        request_date = request.POST.get("request_date")
-        requested_by = request.POST.get("requested_by")
-        oracle_order_date = request.POST.get("oracle_order_date")
-        oracle_po = request.POST.get("oracle_po")
-        order_lead_time = request.POST.get("order_lead_time")
+# def order_view(request):
+#     if request.method == "POST":
+#         item_id = request.POST.get("item")
+#         location_id = request.POST.get(
+#             "location"
+#         )  # This will be the ID of the location
+#         supplier = request.POST.get("supplier")
+#         units = request.POST.get("units")
+#         minimum_units = request.POST.get("minimum_units")
+#         cost = request.POST.get("cost")
+#         unit_ord = request.POST.get("unit_ord")
+#         request_date = request.POST.get("request_date")
+#         requested_by = request.POST.get("requested_by")
+#         oracle_order_date = request.POST.get("oracle_order_date")
+#         oracle_po = request.POST.get("oracle_po")
+#         order_lead_time = request.POST.get("order_lead_time")
 
-        item = get_object_or_404(InventoryItem, id=item_id)
-        location = get_object_or_404(
-            Location, id=location_id
-        )  # Fetch the Location instance
+#         item = get_object_or_404(InventoryItem, id=item_id)
+#         location = get_object_or_404(
+#             Location, id=location_id
+#         )  # Fetch the Location instance
 
-        # Record the order item
-        OrderItem.objects.create(
-            item=item,
-            location=location,  # Use the Location instance here
-            supplier=supplier,
-            on_order=int(unit_ord),
-            quantity_per_unit=units,
-            unit=int(units),  # Assuming 'units' refers to 'unit' here; adjust if needed
-            minimum_unit=int(minimum_units),
-            cost=cost,  # Make sure to convert the string to a Decimal
-            request_date=request_date,
-            requested_by=requested_by,
-            oracle_order_date=oracle_order_date,
-            oracle_po=oracle_po,
-            order_lead_time=order_lead_time,
-        )
+#         # Record the order item
+#         OrderItem.objects.create(
+#             item=item,
+#             location=location,  # Use the Location instance here
+#             supplier=supplier,
+#             on_order=int(unit_ord),
+#             quantity_per_unit=units,
+#             unit=int(units),  # Assuming 'units' refers to 'unit' here; adjust if needed
+#             minimum_unit=int(minimum_units),
+#             cost=cost,  # Make sure to convert the string to a Decimal
+#             request_date=request_date,
+#             requested_by=requested_by,
+#             oracle_order_date=oracle_order_date,
+#             oracle_po=oracle_po,
+#             order_lead_time=order_lead_time,
+#         )
 
-        messages.success(request, "Order successfully recorded.")
-        items = InventoryItem.objects.all().order_by("item")
-        orders = OrderItem.objects.all().order_by("item")
+#         messages.success(request, "Order successfully recorded.")
+#         items = InventoryItem.objects.all().order_by("item")
+#         orders = OrderItem.objects.all().order_by("item")
 
-        return render(
-            request, "inventory_app/order.html", {"items": items, "orders": orders}
-        )
-    else:
-        return HttpResponse("Invalid request", status=400)
+#         return render(
+#             request, "inventory_app/order.html", {"items": items, "orders": orders}
+#         )
+#     else:
+#         return HttpResponse("Invalid request", status=400)
 
 
-def consolidate_stock(request, order_id):
-    if request.method == "POST":
-        order_item = get_object_or_404(OrderItem, id=order_id)
-        inventory_item = (
-            order_item.item
-        )  # Assuming 'item' is a ForeignKey to InventoryItem
+# def consolidate_stock(request, order_id):
+#     if request.method == "POST":
+#         order_item = get_object_or_404(OrderItem, id=order_id)
+#         inventory_item = (
+#             order_item.item
+#         )  # Assuming 'item' is a ForeignKey to InventoryItem
 
-        # TODO:
-        make_transfer(
-            inventory_item.pk,
-            f"supplier@{order_item.supplier}",
-            "InboundGoods",
-            order_item.on_order,
-        )
-        if not order_item.completed:
-            inventory_item.unit += order_item.on_order
-            inventory_item.save()
-            order_item.completed = True
-            order_item.save()
-            return JsonResponse(
-                {"success": True, "message": "Stock consolidated successfully."}
-            )
-        else:
-            return JsonResponse(
-                {"success": False, "message": "Order already completed."}
-            )
-    return JsonResponse({"success": False, "message": "Invalid request"})
+#         # TODO:
+#         make_transfer(
+#             inventory_item.pk,
+#             f"supplier@{order_item.supplier}",
+#             "InboundGoods",
+#             order_item.on_order,
+#         )
+#         if not order_item.completed:
+#             inventory_item.unit += order_item.on_order
+#             inventory_item.save()
+#             order_item.completed = True
+#             order_item.save()
+#             return JsonResponse(
+#                 {"success": True, "message": "Stock consolidated successfully."}
+#             )
+#         else:
+#             return JsonResponse(
+#                 {"success": False, "message": "Order already completed."}
+#             )
+#     return JsonResponse({"success": False, "message": "Invalid request"})
 
 
 ##############
@@ -494,7 +502,9 @@ def consolidate_stock(request, order_id):
 def create_new_item(name, quantity_per_unit, minimum_unit):
     identity = create_new_id(name)
     InventoryItem.objects.create(
-        item=identity["id"], quantity_per_unit=quantity_per_unit, minimum_unit=minimum_unit
+        item=identity["id"],
+        quantity_per_unit=quantity_per_unit,
+        minimum_unit=minimum_unit,
     )
 
 
@@ -507,7 +517,9 @@ def add_new_stock(id, supplier_name, quantity):
     )
 
 
-def get_stock_alert_data(items):
+def get_stock_alert_data(request):
+    items = fetch_all_item_locations()  # Retrieve all inventory items
+
     items_below_minimum = 0
     items_5_more_than_minimum = 0
     items_greater_than_5_more_than_minimum = 0
@@ -564,16 +576,6 @@ def get_items_below_location_threshold_data():
     return below_minimum_counts, below_minimum_locations
 
 
-### Layered functions
-def get_all_items():
-    items_by_location = fetch_all_items()
-    # add names
-    for item in items_by_location:
-        item["name"] = utils.get_item_name(item["child"])
-        item["location"] = utils.get_item_name(item["parent"])
-    return items_by_location
-
-
 ### Location DS utils:
 def make_transfer(item, from_loc, to_loc, quantity):
     payload = {
@@ -583,37 +585,58 @@ def make_transfer(item, from_loc, to_loc, quantity):
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "quantity": quantity,
     }
-    url = "locations-ds.docker.local"  # TODO: move to settings.py
+    url = settings.LOCATION_DS_URL
     resp = requests.post(f"http://{url}/action/transfer", json=payload)
     return resp.json()
 
 
 def fetch_item_locations(item_id):
-    url = "locations-ds.docker.local"  # TODO: move to settings.py
+    url = settings.LOCATION_DS_URL
     resp = requests.get(f"http://{url}/state/for/{item_id}/at/loc@")
     return resp.json()
 
 
-def fetch_all_items():
-    url = "locations-ds.docker.local"  # TODO: move to settings.py
+def fetch_all_item_locations():
+    url = settings.LOCATION_DS_URL
     resp = requests.get(f"http://{url}/state/for/item@/at/loc@")
     return resp.json()
 
 
 def fetch_item_list():
-    url = "identity-ds.docker.local"  # TODO: move to settings.py
+    url = settings.IDENTITY_PROVIDER_URL
     resp = requests.get(f"http://{url}/id/list/item")
     return resp.json()
 
 
 def fetch_all_withdrawls():
-    url = "locations-ds.docker.local"  # TODO: move to settings.py
+    url = settings.LOCATION_DS_URL
     resp = requests.get(f"http://{url}/events/from/loc@")
     return resp.json()
 
 
 def create_new_id(name):
     payload = {"name": str(name), "type": "item"}
-    url = "identity-ds.docker.local"  # TODO: move to settings.py
+    url = settings.IDENTITY_PROVIDER_URL
     resp = requests.post(f"http://{url}/id/create", json=payload)
     return resp.json()
+
+
+def fetch_items_on_order():
+    url = settings.PO_TRACKER_DS_URL
+    resp = requests.get(f"http://{url}/api/ordered_item")
+    return resp.json()
+
+
+"""
+Requests:
+- Aggregated quantities of items into buckets about re-order threshold (include none left)
+    - i.t.o total minimum levels
+    - i.t.o location specific minimum levels
+- Outstanding orders
+    - number of puchase orders
+    - number of items
+- Quantities withdrawn in specified period for top N items
+- top N items with longest actual lead times
+- get average withdrawal rate
+- get estimated time till existing stock runs out
+"""

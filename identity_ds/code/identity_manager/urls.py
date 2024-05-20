@@ -16,7 +16,7 @@ urlpatterns = [
     path("get/<str:identifier_type>/<str:identifier>", views.identify),
     path("upload", views.uploadIdentities),
     path("<str:id>", views.getID),
-    path("", views.getID),
+    path("", views.getIDs),
 ]
 
 

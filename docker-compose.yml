@@ -9,7 +9,7 @@ services:
       - ./inventory_ui/data:/app/data
       - ./inventory_ui/config:/app/config
     ports:
-      - "8000:8000"
+      - "80:8000"
     networks:
       internal:
         aliases:
@@ -17,7 +17,7 @@ services:
     logging:
       driver: syslog
       options:
-        tag: docker-mqtt-broker
+        tag: docker-web-ui
     restart: unless-stopped
     env_file:
       - django_secret_key
@@ -41,7 +41,7 @@ services:
     logging:
       driver: syslog
       options:
-        tag: docker-mqtt-broker
+        tag: docker-invetory-ds
     restart: unless-stopped
     env_file:
       - django_secret_key
@@ -73,6 +73,23 @@ services:
       driver: syslog
       options:
         tag: docker-locations-ds
+    restart: unless-stopped
+    env_file:
+      - django_secret_key
+      - default_password
+
+  purchase-tracker-ds:
+    extends:
+      file: puchase_tracker_ds/app.yml
+      service: app
+    networks:
+      internal:
+        aliases:
+          - purchase-tracker-ds.docker.local
+    logging:
+      driver: syslog
+      options:
+        tag: docker-purchase-tracker-ds
     restart: unless-stopped
     env_file:
       - django_secret_key

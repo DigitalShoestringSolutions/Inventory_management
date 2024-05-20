@@ -17,11 +17,11 @@ from django.forms.widgets import TextInput, NumberInput, DateTimeInput, DateInpu
 #         }
 
 
-class CreateItemForm(forms.ModelForm):
+class CreateItemForm(forms.Form):
     item_name = forms.CharField(label="Item Name",max_length=40)
+    minimum_unit = forms.IntegerField(label="Minimum Units")
+    quantity_per_unit = forms.CharField(label="Quantity Per Unit", max_length=40)
     class Meta:
-        model = models.InventoryItem
-
         fields = ["item_name","quantity_per_unit", "minimum_unit"]
 
         widgets = {

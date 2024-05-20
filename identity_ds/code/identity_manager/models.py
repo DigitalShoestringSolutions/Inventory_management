@@ -21,13 +21,16 @@ class IdentityEntry(models.Model):
 
     def __str__(self):
         return f"{self.type.title}:{self.name}"
-    
+
     def get_id(self):
         return f"{self.type.tag}@{self.auto_id}"
 
     class Meta:
         verbose_name_plural = "ID Entries"
         unique_together = ('type', 'auto_id',)
+        indexes = [
+            models.Index(fields=["type", "auto_id"], name="find_idx"),
+        ]
 
 class ExtraField(models.Model):
     auto_id = models.BigAutoField(primary_key=True)

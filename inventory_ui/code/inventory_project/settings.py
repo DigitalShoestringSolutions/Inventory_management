@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'inventory_app',
+    'default_admin'
 ]
 
 MIDDLEWARE = [
@@ -124,6 +125,8 @@ STATIC_URL = '/static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+INVENTORY_DS_URL = "inventory-ds.docker.local"
 
 try:
     from config.settings import * #noqa

@@ -23,7 +23,7 @@
             });
 
             // New AJAX call for updating locations based on the selected item
-            $.getJSON(`/get-item-locations/${itemId}`, function(locations) {
+            $.getJSON(`/get-locations-for-item/${itemId}`, function(locations) {
                 var locationSelect = $('#location_select');
                 locationSelect.empty(); // Clear existing options
                 locationSelect.append('<option value="">Select a Location</option>'); // Default option
@@ -95,7 +95,7 @@
         </form>
     </div>
 
-    <form id="itemForm" method="POST" action="{% url 'submit_withdrawal' %}">
+    <form id="itemForm" method="POST" action="{% url 'withdraw' %}">
         {% csrf_token %}
     <label for="item_select">Item:</label>
     <select id="item_select" name="item">

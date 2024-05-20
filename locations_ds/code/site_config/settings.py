@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'daphne',
     'corsheaders',
     'whitenoise',
     'rest_framework',
@@ -130,7 +131,7 @@ STATIC_URL = '/static/'
 
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
 
-ASGI_APPLICATION = 'site_config.routing.application'
+ASGI_APPLICATION = "site_config.routing.application"
 
 CHANNEL_LAYERS = {
     'default':{
@@ -151,12 +152,10 @@ import datetime
 DELETE_ON_COMPLETE=True
 DELETE_THRESHOLD=datetime.timedelta(days=1)
 
-#defaults
+# defaults
 MQTT={'broker':'mqtt.docker.local','port':1883,'id':'default_client','sub_topics':[]}
-#overwrite
+# overwrite
 try:
     from config.settings import * #noqa
 except ImportError:
     pass
-
-

@@ -1,26 +1,28 @@
 import requests
 from functools import lru_cache
+from django.conf import settings
+
 
 ### Identity DS utils
-def get_location_name(id):
+def get_name(id):
     try:
-        return do_get_name(id)
-    except:
-        return "<unable to fetch name>"
-
-
-def get_item_name(id):
-    try:
-        return do_get_name(id)
+        result = do_get_identity(id)
+        return result["name"]
     except:
         return "<unable to fetch name>"
 
 
 # cached fetch operations (will only make the request over the network once for each ID)
 @lru_cache  # can add a max_size
-def do_get_name(id):
-    # TODO: move to settings.py
-    url = "identity-ds.docker.local"
+def do_get_identity(id):
+    url = settings.IDENTITY_PROVIDER_URL
     resp = requests.get(f"http://{url}/id/{id}")
-    return resp.json()[0]["name"]
-
+    if resp.status_code != 200:
+        raise ValueError(
+            {
+                "error": "Couldn't get identity",
+                "status": resp.status_code,
+                "message": resp.json(),
+            }
+        )
+    return resp.json()

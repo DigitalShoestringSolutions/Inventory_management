@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'whitenoise',
     'rest_framework',
     'identity_manager',
+    'default_admin'
 ]
 
 MIDDLEWARE = [
