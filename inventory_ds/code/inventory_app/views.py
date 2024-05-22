@@ -21,11 +21,16 @@ from rest_framework.response import Response
 from rest_framework import viewsets, status
 
 import datetime
+from functools import reduce
 import dateutil.parser
 import requests
 from . import utils
 from . import models
 from django.conf import settings
+
+###
+### STATE
+###
 
 
 @api_view(("GET",))
@@ -49,11 +54,18 @@ def state_items(request):
         {
             "id": item.id,
             "name": utils.get_name(item.id),
+            "total_quantity": reduce(
+                sum_quantities_helper, grouped_locations[item.id], 0
+            ),
             "locations": grouped_locations[item.id],
         }
         for item in models.InventoryItem.objects.all()
     ]
     return Response(records, status=status.HTTP_200_OK)
+
+
+def sum_quantities_helper(x, y):
+    return x + y["quantity"]
 
 
 @api_view(("GET",))
@@ -86,6 +98,9 @@ def state_items_detailed(request):
             "name": utils.get_name(item.id),
             "quantity_per_unit": item.quantity_per_unit,
             "minimum_unit": item.minimum_unit,
+            "total_quantity": reduce(
+                sum_quantities_helper, grouped_locations[item.id], 0
+            ),
             "locations": grouped_locations.get(item.id, []),
             "on_order": on_order.get(item.id, None),
         }
@@ -111,23 +126,36 @@ def state_locations(request):
         }
 
         if location_id not in grouped_items:
-            grouped_items[location_id] = {"id":location_id,"name":utils.get_name(location_id),"items":[]}
+            grouped_items[location_id] = {
+                "id": location_id,
+                "name": utils.get_name(location_id),
+                "items": [],
+            }
         grouped_items[location_id]["items"].append(item_record)
 
     return Response(grouped_items.values(), status=status.HTTP_200_OK)
 
+
+###
+### LIST
+###
+
+
 @api_view(("GET",))
 @renderer_classes((JSONRenderer, BrowsableAPIRenderer))
 def list_locations(request):
-    pass
+    out = [
+        {"id": record["id"], "name": record["name"]} for record in fetch_location_list()
+    ]
+    return Response(out, status=status.HTTP_200_OK)
 
 
 @api_view(("GET",))
 @renderer_classes((JSONRenderer, BrowsableAPIRenderer))
-def list_locations_for_item(request,item_id):
+def list_locations_for_item(request, item_id):
     out = [
         {"id": record["parent"], "name": utils.get_name(record["parent"])}
-        for record in fetch_item_locations(item_id)
+        for record in fetch_locations_for_item(item_id)
     ]
     return Response(out, status=status.HTTP_200_OK)
 
@@ -135,12 +163,152 @@ def list_locations_for_item(request,item_id):
 @api_view(("GET",))
 @renderer_classes((JSONRenderer, BrowsableAPIRenderer))
 def list_items(request):
+    out = [
+        {"id": record.id, "name": utils.get_name(record.id)}
+        for record in InventoryItem.objects.all()
+    ]
+    return Response(out, status=status.HTTP_200_OK)
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def list_items_at_location(request, location_id):
+    out = [
+        {"id": record["child"], "name": utils.get_name(record["child"])}
+        for record in fetch_items_at_location(location_id)
+    ]
+    return Response(out, status=status.HTTP_200_OK)
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def list_unregistered_items(request):
+    known_list = fetch_item_list()
+    registered_set = {item.id for item in InventoryItem.objects.all()}
+    difference = [
+        {"id": record["id"], "name": record["name"]}
+        for record in known_list
+        if record["id"] not in registered_set
+    ]
+    return Response(difference, status=status.HTTP_200_OK)
+
+
+###
+### ACTION
+###
+
+
+@api_view(("POST",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def action_withdraw(request):
+    item_id = request.POST.get("item")
+    location_id = request.POST.get("location")
+    units_withdrawn = int(request.POST.get("units_withdrawn"))
+    withdrawn_by = request.POST.get("withdrawn_by")
+
+    # TODO: handle errors
+    resp = make_transfer(
+        item_id, location_id, f"person@{withdrawn_by}", units_withdrawn
+    )
+
+    return Response(resp, status=status.HTTP_200_OK)
+
+
+@api_view(("POST",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def action_transfer(request):
+    item_id = request.POST.get("item")
+    from_id = request.POST.get("from")
+    to_id = request.POST.get("to")
+    units_withdrawn = int(request.POST.get("units_withdrawn"))
+
+    # TODO: handle errors
+    resp = make_transfer(item_id, from_id, to_id, units_withdrawn)
+
+    return Response(resp, status=status.HTTP_200_OK)
+
+
+###
+### ACTION
+###
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def summary_levels_all(request):
+    items = fetch_all_item_locations()  # Retrieve all inventory items
+    on_order = {entry["item"]: entry["remaining"] for entry in fetch_items_on_order()}
+
+    # group py item_id
+    grouped_totals = {}
+    for item in items:
+        item_id = item["child"]
+        if item_id not in grouped_totals:
+            grouped_totals[item_id] = 0
+        grouped_totals[item_id] += item["quantity"] if item["quantity"] else 0
+
+    output = {
+        "below_minimum_after_order": 0,
+        "above_minimum_after_order": 0,
+        "below_minimum": 0,
+        "near_minimum": 0,
+        "above_minimum": 0,
+    }
+    # calculate differences
+    for item_id, total in grouped_totals.items():
+        try:
+            # find InventoryItem for item_id
+            inv_item = InventoryItem.objects.get(id=item_id)
+            # get minimum_unit
+            minimum_unit = inv_item.minimum_unit
+            # compare to total for that item
+            delta = total - minimum_unit
+
+            if delta <= 0:
+                if item_id in on_order:
+                    if delta + on_order[item_id] > 0:
+                        output["above_minimum_after_order"] += 1
+                    else:
+                        output["below_minimum_after_order"] += 1
+                else:
+                    output["below_minimum"] += 1
+            elif delta < 1.2 * minimum_unit:
+                output["near_minimum"] += 1
+            else:
+                output["above_minimum"] += 1
+        except InventoryItem.DoesNotExist:
+            pass
+
+    return Response(output, status=status.HTTP_200_OK)
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def summary_levels_location(request):
     pass
 
 
 @api_view(("GET",))
 @renderer_classes((JSONRenderer, BrowsableAPIRenderer))
-def list_items_at_location(request,location_id):
+def summary_rate_withdrawals(request):
+    pass
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def summary_rate_transfers(request):
+    pass
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def summary_on_order(request):
+    pass
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def summary_time_till_order(request):
     pass
 
 
@@ -350,22 +518,22 @@ def get_item_details(request, item_id):
         return JsonResponse({"error": "Item not found"}, status=404)
 
 
-def submit_withdrawal(request):
-    if request.method == "POST":
-        item_id = request.POST.get("item")
-        location_id = request.POST.get("location")
-        units_withdrawn = int(request.POST.get("units_withdrawn"))
-        withdrawn_by = request.POST.get("withdrawn_by")
+# def submit_withdrawal(request):
+#     if request.method == "POST":
+#         item_id = request.POST.get("item")
+#         location_id = request.POST.get("location")
+#         units_withdrawn = int(request.POST.get("units_withdrawn"))
+#         withdrawn_by = request.POST.get("withdrawn_by")
 
-        # TODO: handle errors
-        make_transfer(item_id, location_id, f"person@{withdrawn_by}", units_withdrawn)
+#         # TODO: handle errors
+#         make_transfer(item_id, location_id, f"person@{withdrawn_by}", units_withdrawn)
 
-        messages.success(request, "Successfully recorded.")
-        items = InventoryItem.objects.all().order_by("item")  # TODO
+#         messages.success(request, "Successfully recorded.")
+#         items = InventoryItem.objects.all().order_by("item")  # TODO
 
-        # return render(request, "inventory_app/user.html", {"items": items})
-    else:
-        return HttpResponse("Invalid request", status=400)
+#         # return render(request, "inventory_app/user.html", {"items": items})
+#     else:
+#         return HttpResponse("Invalid request", status=400)
 
 
 def download_stock_report(request):
@@ -402,7 +570,7 @@ def download_stock_report(request):
 
 def get_locations_for_item(request, item_id):
     print(f"get for {item_id}")
-    raw_item_locations = fetch_item_locations(item_id)
+    raw_item_locations = fetch_locations_for_item(item_id)
     simplified_item_locations = [
         {
             "id": entry["parent"],
@@ -508,15 +676,6 @@ def create_new_item(name, quantity_per_unit, minimum_unit):
     )
 
 
-def add_new_stock(id, supplier_name, quantity):
-    make_transfer(
-        id,
-        f"supplier@{supplier_name}",
-        "loc@inbound",
-        quantity,
-    )
-
-
 def get_stock_alert_data(request):
     items = fetch_all_item_locations()  # Retrieve all inventory items
 
@@ -590,9 +749,15 @@ def make_transfer(item, from_loc, to_loc, quantity):
     return resp.json()
 
 
-def fetch_item_locations(item_id):
+def fetch_locations_for_item(item_id):
     url = settings.LOCATION_DS_URL
     resp = requests.get(f"http://{url}/state/for/{item_id}/at/loc@")
+    return resp.json()
+
+
+def fetch_items_at_location(location_id):
+    url = settings.LOCATION_DS_URL
+    resp = requests.get(f"http://{url}/state/for/item@/at/{location_id}")
     return resp.json()
 
 
@@ -605,6 +770,12 @@ def fetch_all_item_locations():
 def fetch_item_list():
     url = settings.IDENTITY_PROVIDER_URL
     resp = requests.get(f"http://{url}/id/list/item")
+    return resp.json()
+
+
+def fetch_location_list():
+    url = settings.IDENTITY_PROVIDER_URL
+    resp = requests.get(f"http://{url}/id/list/loc")
     return resp.json()
 
 
@@ -625,18 +796,3 @@ def fetch_items_on_order():
     url = settings.PO_TRACKER_DS_URL
     resp = requests.get(f"http://{url}/api/ordered_item")
     return resp.json()
-
-
-"""
-Requests:
-- Aggregated quantities of items into buckets about re-order threshold (include none left)
-    - i.t.o total minimum levels
-    - i.t.o location specific minimum levels
-- Outstanding orders
-    - number of puchase orders
-    - number of items
-- Quantities withdrawn in specified period for top N items
-- top N items with longest actual lead times
-- get average withdrawal rate
-- get estimated time till existing stock runs out
-"""

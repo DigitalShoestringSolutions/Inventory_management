@@ -3,8 +3,10 @@
 **/__pycache__/*
 **/data/*
 **/django_secret_key
+**/default_password
 
-*.DS_Store
+**.DS_Store
+**.vscode/*
 
 start_local.sh
 .todo

@@ -13,10 +13,11 @@ def get_name(id):
 
 
 # cached fetch operations (will only make the request over the network once for each ID)
+#  - TODO may need some sort of precache fetch on this at startup - but wait till it's a problem
 @lru_cache  # can add a max_size
 def do_get_identity(id):
     url = settings.IDENTITY_PROVIDER_URL
-    resp = requests.get(f"http://{url}/id/{id}")
+    resp = requests.get(f"http://{url}/id/{id}") 
     if resp.status_code != 200:
         raise ValueError(
             {

@@ -1,6 +1,7 @@
 import requests
 from functools import lru_cache
 from django.conf import settings
+import datetime
 
 
 ### Identity DS utils
@@ -33,3 +34,16 @@ def create_new_supplier_identity(name):
     url = settings.IDENTITY_PROVIDER_URL
     resp = requests.post(f"http://{url}/id/create", json=payload)
     return resp.status_code, resp.json()
+
+
+def make_transfer(item, from_loc, to_loc, quantity):
+    payload = {
+        "item": str(item),
+        "from": str(from_loc),
+        "to": str(to_loc),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "quantity": quantity,
+    }
+    url = settings.LOCATION_DS_URL
+    resp = requests.post(f"http://{url}/action/transfer", json=payload)
+    return resp.json()

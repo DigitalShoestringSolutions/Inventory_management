@@ -14,7 +14,9 @@ router.register(r"delivery", views.DeliveryViewSet, basename="delivery")
 
 urlpatterns = router.urls
 
-urlpatterns.extend([
-    # path("list/<str:id_type>", views.listByIDType),
-    # path("list", views.listByIDType),
-])
+urlpatterns.extend(
+    [
+        # path("list/<str:id_type>", views.listByIDType),
+        path("known_items/", views.known_items),
+    ]
+)

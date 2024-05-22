@@ -16,12 +16,7 @@ from django.conf import settings
 class HomePageView(View):
     def get(self,request):
         items = get_all_items()
-        items_on_order = get_outstanding_orders()
-        (
-            items_below_minimum,
-            items_5_more_than_minimum,
-            items_greater_than_5_more_than_minimum,
-        ) = get_stock_alert_data()
+        stock_levels = get_stock_alert_data()
 
         below_minimum_counts, below_minimum_locations = (
             get_items_below_location_threshold_data()
@@ -29,10 +24,7 @@ class HomePageView(View):
 
         context = {
             "items": items,
-            "items_on_order": items_on_order,
-            "items_below_minimum": items_below_minimum,
-            "items_5_more_than_minimum": items_5_more_than_minimum,
-            "items_greater_than_5_more_than_minimum": items_greater_than_5_more_than_minimum,
+            "stock_levels": stock_levels,
             "below_minimum_locations": below_minimum_locations,
             "below_threshold_counts": below_minimum_counts,
         }
@@ -43,7 +35,6 @@ class HomePageView(View):
 class WithdrawalPageView(View):
     def get(self, request):
         list_of_available_items = fetch_item_list()
-        print(list_of_available_items)
         return render(
             request, "inventory_app/withdraw.html", {"items": list_of_available_items}
         )
@@ -99,39 +90,40 @@ class AdminPageView(View):
 class OrderPageView(View):
 
     def get(self, request):
-        items = fetch_item_list()
-        orders = get_all_orders()
-        return render(
-            request, "inventory_app/order.html", {"items": items, "orders": orders}
-        )
+        return redirect("http://localhost:8080")
+        # items = fetch_item_list()
+        # orders = get_all_orders()
+        # return render(
+        #     request, "inventory_app/order.html", {"items": items, "orders": orders}
+        # )
 
-    def post(self, request):
-        item_id = request.POST.get("item")
-        location_id = request.POST.get(
-            "location"
-        )  # This will be the ID of the location
-        supplier = request.POST.get("supplier")
-        units = request.POST.get("units")
-        minimum_units = request.POST.get("minimum_units")
-        cost = request.POST.get("cost")
-        unit_ord = request.POST.get("unit_ord")
-        request_date = request.POST.get("request_date")
-        requested_by = request.POST.get("requested_by")
-        oracle_order_date = request.POST.get("oracle_order_date")
-        oracle_po = request.POST.get("oracle_po")
-        order_lead_time = request.POST.get("order_lead_time")
+    # def post(self, request):
+    #     item_id = request.POST.get("item")
+    #     location_id = request.POST.get(
+    #         "location"
+    #     )  # This will be the ID of the location
+    #     supplier = request.POST.get("supplier")
+    #     units = request.POST.get("units")
+    #     minimum_units = request.POST.get("minimum_units")
+    #     cost = request.POST.get("cost")
+    #     unit_ord = request.POST.get("unit_ord")
+    #     request_date = request.POST.get("request_date")
+    #     requested_by = request.POST.get("requested_by")
+    #     oracle_order_date = request.POST.get("oracle_order_date")
+    #     oracle_po = request.POST.get("oracle_po")
+    #     order_lead_time = request.POST.get("order_lead_time")
 
-        data = {}
+    #     data = {}
 
-        create_order(**data)
+    #     create_order(**data)
 
-        messages.success(request, "Order successfully recorded.")
-        items = fetch_item_list()
-        orders = get_all_orders()
+    #     messages.success(request, "Order successfully recorded.")
+    #     items = fetch_item_list()
+    #     orders = get_all_orders()
 
-        return render(
-            request, "inventory_app/order.html", {"items": items, "orders": orders}
-        )
+    #     return render(
+    #         request, "inventory_app/order.html", {"items": items, "orders": orders}
+    #     )
 
 
 class TrackPageView(View):
@@ -225,7 +217,6 @@ def get_item_details(request, item_id):
 
 
 def get_locations_for_item(request, item_id):
-    print(f"get for {item_id}")
     simplified_item_locations = fetch_item_locations(item_id)
 
     return JsonResponse(simplified_item_locations, safe=False)
@@ -284,21 +275,15 @@ def create_new_item(name, quantity_per_unit, minimum_unit):
 
 
 def get_all_items():  # TODO: change for here
-    items_by_location = fetch_all_items()
-    # add names
-    for item in items_by_location:
-        # item["name"] = utils.get_item_name(item["child"])
-        # item["location"] = utils.get_item_name(item["parent"]) #TODO fix formatting
-        item["name"] = item["child"]
-        item["location"] = item["parent"]
-    return items_by_location
+    url = settings.INVENTORY_DS_URL
+    resp = requests.get(f"http://{url}/state/by-items")
+    return resp.json()
 
 
 def get_stock_alert_data():
-    # url = settings.INVENTORY_DS_URL
-    # resp = requests.get(f"http://{url}/stock_alert")
-    # return resp.json()
-    return {},{},{}
+    url = settings.INVENTORY_DS_URL
+    resp = requests.get(f"http://{url}/summary/levels")
+    return resp.json()
 
 
 def get_outstanding_orders():
@@ -353,8 +338,6 @@ def get_top_lead_times():
     #     .order_by("-max_lead_time")[:5]
     # )
     return []
-
-
 
 
 def get_remaining_stock_forecast():

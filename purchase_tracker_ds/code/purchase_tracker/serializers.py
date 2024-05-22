@@ -27,19 +27,47 @@ class SupplierSlugSerializer(serializers.ModelSerializer):
         return output
 
 
+class SuppliedItemReverseMap(serializers.ModelSerializer):
+    item = ItemSlugSerializer(many=False, read_only=True)
+
+    class Meta:
+        model = models.SuppliedItem
+        fields = [
+            "id",
+            "item",
+            "product_page",
+            "expected_lead_time",
+            "last_updated",
+        ]
+        read_only_fields = ["id", "last_updated"]
+
+    def to_representation(self, instance):
+        output = super().to_representation(instance)
+        if instance.expected_lead_time:
+            output["expected_lead_time"] = instance.expected_lead_time.days
+        return output
+
+
 class SuppliedItemMap(serializers.ModelSerializer):
     supplier = SupplierSlugSerializer(many=False, read_only=True)
 
     class Meta:
         model = models.SuppliedItem
         fields = [
-            "pk",
+            "id",
             "supplier",
             "product_page",
             "expected_lead_time",
             "last_updated",
         ]
-        read_only_fields = ["pk", "last_updated"]
+        read_only_fields = ["id", "last_updated"]
+
+    def to_representation(self, instance):
+        output = super().to_representation(instance)
+        if instance.expected_lead_time:
+            output["expected_lead_time"] = instance.expected_lead_time.days
+        return output
+
 
 class ItemFullSerializer(serializers.ModelSerializer):
     sources = SuppliedItemMap(many=True, read_only=True)
@@ -54,7 +82,7 @@ class ItemFullSerializer(serializers.ModelSerializer):
         return output
 
 
-class ItemPKField(serializers.Field):
+class ItemidField(serializers.Field):
     def to_representation(self, instance):
         return instance.id
 
@@ -75,8 +103,8 @@ class DeliveredItemSlugSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.DeliveredItem
-        fields = ["pk", "quantity_delivered", "delivery_date"]
-        read_only_fields = ["pk"]
+        fields = ["id", "quantity_delivered", "delivery_date"]
+        read_only_fields = ["id"]
 
 
 class DeliveredItemWriteSerializer(serializers.ModelSerializer):
@@ -86,19 +114,13 @@ class DeliveredItemWriteSerializer(serializers.ModelSerializer):
         fields = ["ordered_item", "quantity_delivered", "delivery_date"]
 
 
-class OrderItemSerializer(serializers.ModelSerializer):
+class OrderItemReadSerializer(serializers.ModelSerializer):
     deliveries = DeliveredItemSlugSerializer(many=True,read_only = True)
+    item = ItemSlugSerializer(read_only=True)
     class Meta:
         model = models.OrderItem
-        fields = ["pk", "item", "quantity_requested", "deliveries"]
-        read_only_fields = ["pk"]
-
-    # def create(self, validated_data):
-    #     # TODO: in transaction
-    #     print(f"OI {validated_data}")
-    #     item_data = validated_data.pop("item", {})
-    #     item_obj,_created = models.Item.objects.get_or_create(id=item_data["id"])
-    #     return models.OrderItem.objects.create(item=item_obj, **validated_data)
+        fields = ["id", "item", "quantity_requested", "deliveries"]
+        read_only_fields = ["id"]
 
     def to_representation(self, instance):
         output =  super().to_representation(instance)
@@ -106,11 +128,20 @@ class OrderItemSerializer(serializers.ModelSerializer):
         return output
 
 
+class OrderItemWriteSerializer(serializers.ModelSerializer):
+    deliveries = DeliveredItemSlugSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = models.OrderItem
+        fields = ["id", "item", "quantity_requested", "deliveries"]
+        read_only_fields = ["id"]
+
+
 class OrderUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.Order
         fields = [
-            "pk",
+            "id",
             "supplier",
             "ordered_by",
             "purchase_order_reference",
@@ -119,16 +150,17 @@ class OrderUpdateSerializer(serializers.ModelSerializer):
             "date_expected_delivery",
             "complete",
         ]
-        read_only_fields = ["pk"]
+        read_only_fields = ["id"]
 
 
-class OrderSerializer(serializers.ModelSerializer):
-    items = OrderItemSerializer(many=True)
+class OrderReadSerializer(serializers.ModelSerializer):
+    items = OrderItemReadSerializer(many=True)
+    supplier = SupplierSlugSerializer(read_only = True)
 
     class Meta:
         model = models.Order
         fields = [
-            "pk",
+            "id",
             "supplier",
             "ordered_by",
             "purchase_order_reference",
@@ -138,7 +170,26 @@ class OrderSerializer(serializers.ModelSerializer):
             "date_expected_delivery",
             "complete",
         ]
-        read_only_fields = ["pk"]
+        read_only_fields = ["id"]
+
+
+class OrderWriteSerializer(serializers.ModelSerializer):
+    items = OrderItemWriteSerializer(many=True)
+
+    class Meta:
+        model = models.Order
+        fields = [
+            "id",
+            "supplier",
+            "ordered_by",
+            "purchase_order_reference",
+            "items",
+            "date_enquired",
+            "date_order_placed",
+            "date_expected_delivery",
+            "complete",
+        ]
+        read_only_fields = ["id"]
 
     def create(self, validated_data):
         print(f"O {validated_data}")
@@ -160,18 +211,24 @@ class SuppliedItemReadSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.SuppliedItem
         fields = [
-            "pk",
+            "id",
             "item",
             "supplier",
             "product_page",
             "expected_lead_time",
             "last_updated",
         ]
-        read_only_fields = ["pk", "last_updated"]
+        read_only_fields = ["id", "last_updated"]
+
+    def to_representation(self, instance):
+        output = super().to_representation(instance)
+        if instance.expected_lead_time:
+            output["expected_lead_time"] = instance.expected_lead_time.days
+        return output
 
 
 class SuppliedItemWriteSerializer(serializers.ModelSerializer):
-    item = ItemPKField()
+    item = ItemidField()
 
     class Meta:
         model = models.SuppliedItem
@@ -182,14 +239,10 @@ class SuppliedItemWriteSerializer(serializers.ModelSerializer):
             "expected_lead_time",
         ]
 
-    # def validate_item(self, value):
-    #     print(f"validator {value}")
-    #     return value
-
 
 class SupplierFullSerializer(serializers.ModelSerializer):
     name = serializers.CharField(write_only=True)
-    supplied_items = ItemFullSerializer(many=True, read_only=True)
+    supplied_items = SuppliedItemReverseMap(many=True, read_only=True)
 
     class Meta:
         model = models.Supplier
@@ -206,10 +259,6 @@ class SupplierFullSerializer(serializers.ModelSerializer):
             )
         validated_data["id"] = payload["id"]
         return super().create(validated_data)
-
-    # def update(self, instance, validated_data):
-    #     # TODO: change name
-    #     super().update(instance, validated_data)
 
     def to_representation(self, instance):
         output = super().to_representation(instance)

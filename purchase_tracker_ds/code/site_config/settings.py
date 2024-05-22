@@ -151,6 +151,8 @@ MQTT = {
 }
 
 IDENTITY_PROVIDER_URL = "identity-ds.docker.local"
+LOCATION_DS_URL = "locations-ds.docker.local"
+INBOUND_LOCATION_ID = "loc@1"
 
 # overwrite
 try:

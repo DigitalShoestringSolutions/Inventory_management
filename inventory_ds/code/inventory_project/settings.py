@@ -125,9 +125,14 @@ STATIC_URL = "/static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 
+#
+# APP Settings
+#
+
 LOCATION_DS_URL = "locations-ds.docker.local"
 IDENTITY_PROVIDER_URL = "identity-ds.docker.local"
 PO_TRACKER_DS_URL = "purchase-tracker-ds.docker.local"
+
 
 try:
     from config.settings import *  # noqa

@@ -1,4 +1,5 @@
 from django.db import models
+from django.conf import settings
 import datetime
 from . import utils
 
@@ -17,17 +18,17 @@ class Supplier(models.Model):
 
 class Item(models.Model):
     id = models.CharField(max_length=32, primary_key=True)
-    suppliers = models.ManyToManyField(
-        Supplier, through="SuppliedItem", related_name="supplied_items"
-    )  # Not strictly needed here as the relationship is defined in the SupplierItem model, but it helps with related_name
-
+   
     def __str__(self):
         return utils.get_name(self.id)
 
 
 class SuppliedItem(models.Model):
+    id = models.BigAutoField(primary_key=True)
     item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name="sources")
-    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE)
+    supplier = models.ForeignKey(
+        Supplier, on_delete=models.CASCADE, related_name="supplied_items"
+    )
 
     # optional
     product_page = models.URLField(max_length=200, null=True, blank=True)
@@ -40,6 +41,7 @@ class SuppliedItem(models.Model):
     last_updated = models.DateField(
         auto_now=True
     )  # Automatically updates whenever the Model is saved
+    # deleted = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{str(self.item)} from {self.supplier}"
@@ -75,7 +77,9 @@ class SuppliedItem(models.Model):
             return True
         return False
 
+
 class Order(models.Model):
+    id = models.BigAutoField(primary_key=True)
     supplier = models.ForeignKey(
         Supplier, related_name="current_orders", on_delete=models.CASCADE
     )
@@ -102,6 +106,7 @@ class Order(models.Model):
 
 
 class OrderItem(models.Model):
+    id = models.BigAutoField(primary_key=True)
     order = models.ForeignKey(Order, related_name="items", on_delete=models.CASCADE)
     item = models.ForeignKey(Item, related_name="ordered", on_delete=models.CASCADE)
     quantity_requested = models.IntegerField()
@@ -117,12 +122,31 @@ class OrderItem(models.Model):
             models.Sum("quantity_delivered", default=0)
         )["quantity_delivered__sum"]
         return self.quantity_requested - delivered
-    
 
 
 class DeliveredItem(models.Model):
+    id = models.BigAutoField(primary_key=True)
     ordered_item = models.ForeignKey(
         OrderItem, related_name="deliveries", on_delete=models.CASCADE
     )
     quantity_delivered = models.IntegerField()
     delivery_date = models.DateField(default=datetime.date.today)
+
+    # Signal attached in signals.py - runs whenever the instance is saved
+    @classmethod
+    def post_create(cls, sender, instance, created, *args, **kwargs):
+        if not created:
+            return
+        # Transfer goods from supplier to inbound location
+        inbound_goods_location = settings.INBOUND_LOCATION_ID
+        if inbound_goods_location:
+            item = instance.ordered_item.item.id
+            from_id = instance.ordered_item.order.supplier.id
+            quantity = instance.quantity_delivered
+            utils.make_transfer(
+                item,
+                from_id,
+                inbound_goods_location,
+                quantity,
+            )
+            print(f"Auto Inbound Goods Location Transfer of {quantity} x {item} from {from_id} to {inbound_goods_location}")
