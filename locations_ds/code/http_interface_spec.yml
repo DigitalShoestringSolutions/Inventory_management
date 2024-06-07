@@ -1,0 +1,360 @@
+openapi: 3.0.3
+info:
+  title: REST API for Location Data Storage Service Module
+  version: 1.0.0
+  description: |
+    This document describes the service modules's REST API (Application Programming Interface) which can be used to extract data 
+    from the solution or send data to it. This is not necessary for most users and is intended for technically capable 
+    users or software developers who are looking to integrate this solution with other systems in their environment.
+
+    This document uses the OpenAPI standard. (For help on how to understand this standard, there is a tutorial [here](https://learn.openapis.org/introduction.html).)
+  contact:
+    name: Shoestring
+    url: https://www.digitalshoestring.net
+    email: contact@digitalshoestring.net
+  license:
+    name: GPL 3.0
+    url: "https://www.gnu.org/licenses/gpl-3.0.en.html"
+# tags:
+#   - name: service-module
+
+servers:
+  - url: "http://{ip}:{port}"
+    description: Location Data Query Endpoint - can be used to query current and historic location data.
+    variables:
+      ip:
+        description: IP address or hostname of the device on which this service module is deployed.
+        default: localhost
+      port:
+        description: Port at which the service module's API endpoint is hosted.
+        default: "8001"
+paths:
+  /state:
+    get:
+      summary: Query all items' locations
+      tags:
+        - state
+      description: Get the location(s) of all items - now, or at the specified time.
+      parameters:
+        - $ref: "#/components/parameters/at_time"
+      responses:
+        "200":
+          description: Query Results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/stateSerialiserSchema"
+  /state/for/{item}:
+    get:
+      summary: Query an items location(s)
+      tags:
+        - state
+      description: Get the location(s) of the specified item - now, or at the specified time.
+      parameters:
+        - name: item
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/at_time"
+      responses:
+        "200":
+          description: Query Results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/stateSerialiserSchema"
+  /state/at/{location}:
+    get:
+      summary: Query location items
+      tags:
+        - state
+      description: Get the items at a location - now, or at the specified time.
+      parameters:
+        - name: location
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/at_time"
+      responses:
+        "200":
+          description: Query Results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/stateSerialiserSchema"
+  /state/history:
+    get:
+      summary: Query location history of all items
+      tags:
+        - state
+      description: Get the historic location(s) of all items - within a timeframe if specified.
+      parameters:
+        - $ref: "#/components/parameters/period_start"
+        - $ref: "#/components/parameters/period_end"
+      responses:
+        "200":
+          description: Query Results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/stateSerialiserSchema"
+  /state/history/for/{item}:
+    get:
+      summary: Query location history of an item
+      tags:
+        - state
+      description: Get the historic location(s) of the specified item - within a timeframe if specified.
+      parameters:
+        - $ref: "#/components/parameters/period_start"
+        - $ref: "#/components/parameters/period_end"
+        - name: item
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Query Results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/stateSerialiserSchema"
+  /state/history/at/{location}:
+    get:
+      summary: Query history of a location
+      tags:
+        - state
+      description: Get the historic record of all items at the specified location - within a timeframe if specified.
+      parameters:
+        - $ref: "#/components/parameters/period_start"
+        - $ref: "#/components/parameters/period_end"
+        - name: location
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Query Results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/stateSerialiserSchema"
+  /events:
+    get:
+      summary: Get all recorded events
+      tags:
+        - events
+      description: Get all recorded events - within a timeframe if specified.
+      parameters:
+        - $ref: "#/components/parameters/period_start"
+        - $ref: "#/components/parameters/period_end"
+      responses:
+        "200":
+          description: Query Results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/eventSerialiserSchema"
+  /events/for/{item}:
+    get:
+      summary: Get all recorded events for the specified item
+      tags:
+        - events
+      description: Get all recorded events for the specified item - within a timeframe if specified.
+      parameters:
+        - $ref: "#/components/parameters/period_start"
+        - $ref: "#/components/parameters/period_end"
+        - name: item
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Query Results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/eventSerialiserSchema"
+  /events/to/{location}:
+    get:
+      summary: Get all recorded events going to the specified location
+      tags:
+        - events
+      description: Get all recorded events going to the specified location - within a timeframe if specified.
+      parameters:
+        - $ref: "#/components/parameters/period_start"
+        - $ref: "#/components/parameters/period_end"
+        - name: location
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Query Results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/eventSerialiserSchema"
+  /events/from/{location}:
+    get:
+      summary: Get all recorded events going from the specified location
+      tags:
+        - events
+      description: Get all recorded events going from the specified location - within a timeframe if specified.
+      parameters:
+        - $ref: "#/components/parameters/period_start"
+        - $ref: "#/components/parameters/period_end"
+        - name: location
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Query Results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/eventSerialiserSchema"
+  /events/at/{location}:
+    get:
+      summary: Get all recorded events to or from the specified location
+      tags:
+        - events
+      description: Get all recorded events to or from the specified location - within a timeframe if specified.
+      parameters:
+        - $ref: "#/components/parameters/period_start"
+        - $ref: "#/components/parameters/period_end"
+        - name: location
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Query Results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/eventSerialiserSchema"
+
+components:
+  parameters:
+    at_time:
+      name: t
+      in: query
+      required: false
+      description: Returns results as they were at this time
+      schema:
+        type: string
+        format: date-time
+        description: ISO8601 timestamp
+    period_start:
+      name: from
+      in: query
+      required: false
+      description: Returns results from this point in time onwards
+      schema:
+        type: string
+        format: date-time
+        description: ISO8601 timestamp
+    period_end:
+      name: to
+      in: query
+      required: false
+      description: Returns results up until this time
+      schema:
+        type: string
+        format: date-time
+        description: ISO8601 timestamp
+  schemas:
+    stateSerialiserSchema:
+      type: object
+      properties:
+        record_id:
+          type: integer
+          description: Record primary key
+        item_id:
+          type: string
+          description: The item this record is about
+        location_link:
+          type: string
+          description: The location this record is about
+        start:
+          type: string
+          format: date-time
+          description: ISO8601 timestamp of record start time
+        end:
+          type: string
+          format: date-time
+          description: ISO8601 timestamp of record end time
+          nullable: true
+        quantity:
+          type: integer
+          description: Quantity of the item at this location during the record's period
+          nullable: true
+      required:
+        - record_id
+        - item_id
+        - location_link
+        - start
+        - end
+        - quantity
+    eventSerialiserSchema:
+      type: object
+      properties:
+        event_id:
+          type: integer
+          description: Event record primary key
+        item_id:
+          type: string
+          description: The item this record is about
+        from_location_link:
+          type: string
+          description: Location the item left
+          nullable: true
+        to_location_link:
+          type: string
+          description: Location the item arrived at
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO8601 timestamp of event
+        quantity:
+          type: integer
+          description: Quantity of the item at this location during the record's period
+          nullable: true
+      required:
+        - event_id
+        - item_id
+        - to_location_link
+        - from_location_link
+        - timestamp
+        - quantity

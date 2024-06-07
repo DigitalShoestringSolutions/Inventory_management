@@ -1,0 +1,42 @@
+version: '2'
+
+services:
+    app:
+        build: .    
+        working_dir: /app
+        command: sh -c "python manage.py collectstatic --noinput &&
+                        python manage.py migrate &&
+                        python manage.py runserver 0.0.0.0:80"
+                        # daphne -b 0.0.0.0 -p 80 site_config.asgi:application"
+        volumes:
+            - ./code/:/app
+            - ./data/:/app/data
+            - ./config/:/app/config
+            - /etc/localtime:/etc/localtime:ro
+        ports:
+            - "8004:80"
+        restart: unless-stopped
+
+    license-report:
+        build: .
+        working_dir: /
+        command: sh -c "pip install pip-licenses && pip-licenses --with-description --order=license --format=markdown --output-file /out/python_licenses.MD"
+        volumes:
+            - ./docs:/out   
+    
+    generate-http-docs:
+        image: openapitools/openapi-generator-cli:v7.5.0
+        command: generate -g html2 -i /http_interface_spec.yml -o /out/
+        volumes:
+            - ./code/http_interface_spec.yml:/http_interface_spec.yml:ro
+            - ./docs/interface/http:/out
+    
+    generate-mqtt-docs:
+        build: 
+            context: .
+            target: mqtt_docs_gen
+        command: asyncapi generate fromTemplate -o /out/ /mqtt_interface_spec.yml  @asyncapi/html-template --force-write -p config=/asyncapi_gen_conf.json
+        volumes:
+            - ./docs/src/asyncapi_gen_conf.json:/asyncapi_gen_conf.json
+            - ./code/mqtt_interface_spec.yml:/mqtt_interface_spec.yml:ro
+            - ./docs/interface/mqtt:/out

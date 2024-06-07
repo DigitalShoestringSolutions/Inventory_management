@@ -1,0 +1,15 @@
+.bottom_bar {
+    position: fixed;
+    left: 50%;
+    bottom: 5px;
+    translate: -50%;
+  }
+
+.toast-container{
+    position: fixed !important;
+}
+
+.custom_sticky{
+  position: sticky;
+  z-index: 1030;
+}

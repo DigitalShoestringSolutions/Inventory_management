@@ -1,0 +1,191 @@
+asyncapi: 3.0.0
+info:
+  title: MQTT API for Location Data Storage Service Module
+  version: 1.0.0
+  description: |-
+    This document describes the service modules's MQTT API (Application Programming Interface) which can be used to extract data 
+    from the solution or send data to it. This is not necessary for most users and is intended for technically capable 
+    users or software developers who are looking to integrate this solution with other systems in their environment.
+
+    This document uses the AsyncAPI standard. (For help on how to understand this standard, there is a tutorial [here](https://www.asyncapi.com/docs/tutorials).)
+  contact:
+    name: Shoestring
+    url: https://www.digitalshoestring.net
+    email: contact@digitalshoestring.net
+  license:
+    name: GPL 3.0
+    url: "https://www.gnu.org/licenses/gpl-3.0.en.html"
+  # externalDocs:
+  #   description: Find more info here
+  #   url: https://github.com/DigitalShoestringSolutions/ScrapMonitoring/tree/master
+  tags:
+    - name: service-module
+defaultContentType: application/json
+
+servers:
+  live-updates:
+    host: "{broker_ip}:1883"
+    protocol: MQTT
+    protocolVersion: 3.1.1
+    title: Location Data Query Endpoint
+    description: An HTTP endpoint that can be used to query current and historic location data.
+    variables:
+      broker_ip:
+        description: IP address or hostname of the MQTT broker that this service module is configured to use.
+        default: localhost
+
+
+channels:
+  individualLocationTransfersChannel:
+    title: Individual Item Location Transfers Channel
+    description: |-
+      ## Receive Transfer Transactions for Individual Items:
+      
+      This channel is used to receive location transfer transactions for items that are tracked as individuals (e.g. The motor with serial number abcd1234 is at location XYZ).
+    
+      A message on this channel indicates that the specified ***item*** was checked in***to*** a location at the provided ***timestamp***.
+    address: "location_update/{to_location}"
+    servers:
+      - mqtt:
+        $ref: "#/servers/live-updates"
+    parameters:
+      to_location:
+        description: The location where the item is being transfered to.
+        examples:
+          - "#loc@1233432"
+        location: "$message.payload#/to"
+    messages:
+      individualItems:
+        $ref: "#/components/messages/individualItemTransactionMessage"
+  bulkLocationTransfersChannel:
+    title: Location Transfers Channel
+    description: |-
+      ## Receive Transfer Transactions for Bulk Items:
+      
+      This channel is used to receive location transfer transactions for items that are tracked in bulk or as quantities (e.g. there are 14 motors at location XYZ).
+
+      A message on this channel indicates that the specified ***quantity*** of an ***item*** moved ***from*** one location ***to*** another location at the provided ***timestamp***.
+    address: "location_update/{to_location}/{from_location}"
+    servers:
+      - mqtt:
+        $ref: "#/servers/live-updates"
+    parameters:
+      to_location:
+        description: The location where the collection of items is being transfered to.
+        examples:
+          - "#loc@1233432"
+        location: "$message.payload#/to"
+      from_location:
+        description: The location where the collection of items is being transfered from.
+        examples:
+          - "#loc@1233433"
+        location: "$message.payload#/from"
+    messages:
+      bulkItems:
+        $ref: "#/components/messages/bulkItemTransactionMessage"
+
+operations:
+  receiveIndividualTransactions:
+    action: receive
+    title: Receive Individual Transactions
+    channel:
+      $ref: "#/channels/individualLocationTransfersChannel"
+    traits:
+      - $ref: "#/components/operationTraits/mqtt"
+    messages:
+      - $ref: "#/channels/individualLocationTransfersChannel/messages/individualItems"
+  receiveBulkTransactions:
+    action: receive
+    title: Receive Bulk Transactions
+    channel:
+      $ref: "#/channels/bulkLocationTransfersChannel"
+    traits:
+      - $ref: "#/components/operationTraits/mqtt"
+    messages:
+      - $ref: "#/channels/bulkLocationTransfersChannel/messages/bulkItems"
+
+components:
+  messages:
+    individualItemTransactionMessage:
+      name: Individual Item Location Transfer Transaction
+      title: Individual Item Location Transfer Transaction
+      summary: >-
+        Inform about a location transfer for an individual item.
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/individualItemTransactionSchema"
+      examples:
+        - name: Transaction for Individual Item.
+          payload:
+            item: '#item@012312'
+            to: '#loc@15323'
+            timestamp: "2024-01-29T12:34:45.000+01:00"
+    bulkItemTransactionMessage:
+      name: Bulk Item Location Transfer Transaction
+      title: Bulk Item Location Transfer Transaction
+      summary: >-
+        Inform about a location transfer for a bulk item.
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/bulkItemTransactionSchema"
+      examples:
+        - name: Transaction for Bulk Item.
+          payload:
+            item: '#part@012312'
+            from: '#loc@15324'
+            to: '#loc@15323'
+            quantity: 7
+            timestamp: "2024-01-29T12:34:45.000+01:00"
+  schemas:
+    individualItemTransactionSchema:
+      type: object
+      properties:
+        item:
+          $ref: "#/components/schemas/item_id_field"
+        to:
+          $ref: "#/components/schemas/location_id_field"
+        timestamp:
+          $ref: "#/components/schemas/timestamp_field"
+      required:
+        - item
+        - to
+        - timestamp
+    bulkItemTransactionSchema:
+      type: object
+      properties:
+        item:
+          $ref: "#/components/schemas/item_id_field"
+        from:
+          $ref: "#/components/schemas/location_id_field"
+        to:
+          $ref: "#/components/schemas/location_id_field"
+        quantity:
+          $ref: "#/components/schemas/quantity_field"
+        timestamp:
+          $ref: "#/components/schemas/timestamp_field"
+      required:
+        - item
+        - to
+        - timestamp
+        - from
+        - quantity
+    timestamp_field:
+      type: string
+      format: date-time
+      description: ISO8601 timestamp
+    location_id_field:
+      type: string
+      description: Location ID.
+    item_id_field:
+      type: string
+      description: Item ID.
+    quantity_field:
+      type: integer
+      description: Number of items 
+      minimum: 1
+
+  operationTraits:
+    mqtt:
+      bindings:
+        mqtt:
+          qos: 1

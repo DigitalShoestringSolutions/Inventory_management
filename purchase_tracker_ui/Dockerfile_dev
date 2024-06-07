@@ -1,0 +1,4 @@
+FROM node:19-alpine
+WORKDIR /app
+COPY ./code/package.json /app
+RUN npm install
