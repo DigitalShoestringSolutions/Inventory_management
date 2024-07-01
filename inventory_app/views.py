@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from .forms import StockUpdateForm, StockAddForm
+from .forms import StockUpdateForm, StockAddForm, OrderForm
 from .models import InventoryItem, ItemWithdrawal, OrderItem, Location
 from django.http import JsonResponse
 from django.http import HttpResponse
@@ -425,44 +425,49 @@ def get_locations_for_item(request, item_id):
 
 def order_view(request):
     if request.method == 'POST':
-        item_id = request.POST.get('item')
-        location_id = request.POST.get('location')  # This will be the ID of the location
-        supplier = request.POST.get('supplier')
-        units = request.POST.get('units') 
-        minimum_units = request.POST.get('minimum_units')
-        cost = request.POST.get('cost')
-        unit_ord = request.POST.get('unit_ord')  
-        request_date = request.POST.get('request_date')
-        requested_by = request.POST.get('requested_by')
-        oracle_order_date = request.POST.get('oracle_order_date')
-        oracle_po = request.POST.get('oracle_po')
-        order_lead_time = request.POST.get('order_lead_time')
+        form = OrderForm(request.POST)
+        if form.is_valid():
+            item_id = form.cleaned_data['item']
+            location_id = form.cleaned_data['location']
+            supplier = form.cleaned_data['supplier']
+            units = form.cleaned_data['units']
+            minimum_units = form.cleaned_data['minimum_units']
+            cost = form.cleaned_data['cost']
+            unit_ord = form.cleaned_data['unit_ord']
+            request_date = form.cleaned_data['request_date']
+            requested_by = form.cleaned_data['requested_by']
+            oracle_order_date = form.cleaned_data['oracle_order_date']
+            oracle_po = form.cleaned_data['oracle_po']
+            order_lead_time = form.cleaned_data['order_lead_time']
 
-        item = get_object_or_404(InventoryItem, id=item_id)
-        location = get_object_or_404(Location, id=location_id)  # Fetch the Location instance
-        
-        # Record the order item
-        OrderItem.objects.create(
-            item=item,
-            location=location,  # Use the Location instance here
-            supplier=supplier,
-            on_order=int(unit_ord),
-            quantity_per_unit=units,
-            unit=int(units),  # Assuming 'units' refers to 'unit' here; adjust if needed
-            minimum_unit=int(minimum_units),
-            cost=cost,  # Make sure to convert the string to a Decimal
-            request_date=request_date,
-            requested_by=requested_by,
-            oracle_order_date=oracle_order_date,
-            oracle_po=oracle_po,
-            order_lead_time=order_lead_time
-        )
+            item = get_object_or_404(InventoryItem, id=item_id)
+            location = get_object_or_404(Location, id=location_id)
 
-        messages.success(request, 'Order successfully recorded.')
-        items = InventoryItem.objects.all().order_by('item')
-        orders = OrderItem.objects.all().order_by('item')
-        
-        return render(request, 'inventory_app/order.html', {'items': items, 'orders': orders})
+            OrderItem.objects.create(
+                item=item,
+                location=location,
+                supplier=supplier,
+                on_order=int(unit_ord),
+                quantity_per_unit=units,
+                unit=int(units),
+                minimum_unit=int(minimum_units),
+                cost=cost,
+                request_date=request_date,
+                requested_by=requested_by,
+                oracle_order_date=oracle_order_date,
+                oracle_po=oracle_po,
+                order_lead_time=order_lead_time
+            )
+
+            messages.success(request, 'Order successfully recorded.')
+            items = InventoryItem.objects.all().order_by('item')
+            orders = OrderItem.objects.all().order_by('item')
+
+            return render(request, 'inventory_app/order.html', {'items': items, 'orders': orders})
+        else:
+            # Form is not valid, render the form again with error messages
+            messages.error(request, 'Please fill out all required fields.')
+            return render(request, 'inventory_app/order.html', {'form': form})
     else:
         return HttpResponse("Invalid request", status=400)
 
