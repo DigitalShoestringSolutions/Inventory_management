@@ -344,6 +344,8 @@ def download_stock_report(request):
     # Create a workbook
     wb = Workbook()
     ws = wb.active
+    
+    ws.append(headers)
 
     # Write data to worksheet
     for row in data:
