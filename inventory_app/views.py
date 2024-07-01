@@ -260,7 +260,7 @@ def admin_view(request):
         add_error_message = "Please fill out all required fields."
     else:
         add_error_message = None
-        
+
     return render(request, 'inventory_app/adminpage.html', {
         'update_form': update_form,
         'add_form': add_form,
@@ -341,9 +341,17 @@ def download_stock_report(request):
     # Fetch data from your database
     data = InventoryItem.objects.all().values_list()  # This fetches all Stock items as tuples
 
+    # Fetch headers dynamically from the database
+    headers = []
+    for field in InventoryItem._meta.get_fields():
+        if hasattr(field, 'verbose_name'):
+            headers.append(field.verbose_name.capitalize())
+
     # Create a workbook
     wb = Workbook()
     ws = wb.active
+    
+    ws.append(headers)
 
     # Write data to worksheet
     for row in data:
